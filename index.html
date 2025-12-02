@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nexion - Gestão de Projetos Dev</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              base: {
+                950: 'var(--color-base-950)',
+                900: 'var(--color-base-900)',
+                800: 'var(--color-base-800)',
+                700: 'var(--color-base-700)',
+                600: 'var(--color-base-600)',
+                text: 'var(--color-text-main)',
+                muted: 'var(--color-text-muted)',
+              },
+              primary: {
+                400: 'var(--color-primary-400)',
+                500: 'var(--color-primary-500)',
+                600: 'var(--color-primary-600)',
+                900: 'var(--color-primary-900)',
+              }
+            }
+          }
+        }
+      }
+    </script>
+
+    <style>
+      body { font-family: 'Inter', sans-serif; background-color: var(--color-base-900); color: var(--color-text-main); transition: background-color 0.3s ease, color 0.3s ease; }
+      
+      /* --- TEMAS --- */
+      
+      /* 1. Cosmic (Original/Default) - Slate & Indigo */
+      :root {
+        --color-base-950: #020617;
+        --color-base-900: #0f172a;
+        --color-base-800: #1e293b;
+        --color-base-700: #334155;
+        --color-base-600: #475569;
+        
+        --color-text-main: #f8fafc;
+        --color-text-muted: #94a3b8;
+
+        --color-primary-400: #818cf8;
+        --color-primary-500: #6366f1;
+        --color-primary-600: #4f46e5;
+        --color-primary-900: #312e81;
+      }
+
+      /* 2. Dracula - Dark Gray & Purple/Pink */
+      [data-theme="dracula"] {
+        --color-base-950: #18181b;
+        --color-base-900: #27272a;
+        --color-base-800: #3f3f46;
+        --color-base-700: #52525b;
+        --color-base-600: #71717a;
+        
+        --color-text-main: #fafafa;
+        --color-text-muted: #a1a1aa;
+
+        --color-primary-400: #c084fc;
+        --color-primary-500: #a855f7;
+        --color-primary-600: #9333ea;
+        --color-primary-900: #581c87;
+      }
+
+      /* 3. Forest - Deep Green & Emerald */
+      [data-theme="forest"] {
+        --color-base-950: #022c22;
+        --color-base-900: #064e3b;
+        --color-base-800: #065f46;
+        --color-base-700: #047857;
+        --color-base-600: #059669;
+        
+        --color-text-main: #ecfdf5;
+        --color-text-muted: #6ee7b7;
+
+        --color-primary-400: #34d399;
+        --color-primary-500: #10b981;
+        --color-primary-600: #059669;
+        --color-primary-900: #064e3b;
+      }
+
+      /* 4. Ocean - Deep Blue & Cyan */
+      [data-theme="ocean"] {
+        --color-base-950: #083344;
+        --color-base-900: #164e63;
+        --color-base-800: #155e75;
+        --color-base-700: #0e7490;
+        --color-base-600: #0891b2;
+        
+        --color-text-main: #ecfeff;
+        --color-text-muted: #67e8f9;
+
+        --color-primary-400: #22d3ee;
+        --color-primary-500: #06b6d4;
+        --color-primary-600: #0891b2;
+        --color-primary-900: #164e63;
+      }
+
+      /* 5. Sunset - Warm Gray & Orange */
+      [data-theme="sunset"] {
+        --color-base-950: #292524;
+        --color-base-900: #44403c;
+        --color-base-800: #57534e;
+        --color-base-700: #78716c;
+        --color-base-600: #a8a29e;
+        
+        --color-text-main: #fafaf9;
+        --color-text-muted: #d6d3d1;
+
+        --color-primary-400: #fb923c;
+        --color-primary-500: #f97316;
+        --color-primary-600: #ea580c;
+        --color-primary-900: #7c2d12;
+      }
+      
+      /* 5b. Jungle - Warm Gray (like Sunset) & Lime Green */
+      [data-theme="jungle"] {
+        --color-base-950: #292524;
+        --color-base-900: #44403c;
+        --color-base-800: #57534e;
+        --color-base-700: #78716c;
+        --color-base-600: #a8a29e;
+        
+        --color-text-main: #fafaf9;
+        --color-text-muted: #d6d3d1;
+
+        --color-primary-400: #a3e635;
+        --color-primary-500: #84cc16;
+        --color-primary-600: #65a30d;
+        --color-primary-900: #365314;
+      }
+
+      /* 6. Light - Clean White */
+      [data-theme="light"] {
+        --color-base-950: #ffffff;
+        --color-base-900: #f3f4f6;
+        --color-base-800: #e5e7eb;
+        --color-base-700: #d1d5db;
+        --color-base-600: #9ca3af;
+        
+        --color-text-main: #111827;
+        --color-text-muted: #4b5563;
+
+        --color-primary-400: #6366f1;
+        --color-primary-500: #4f46e5;
+        --color-primary-600: #4338ca;
+        --color-primary-900: #e0e7ff;
+      }
+      
+      /* 6b. Blossom - Light with Pink */
+      [data-theme="blossom"] {
+        --color-base-950: #fff1f2;
+        --color-base-900: #fff0f5; /* Lavanda suave/Branco rosado */
+        --color-base-800: #ffe4e6;
+        --color-base-700: #fecdd3;
+        --color-base-600: #fda4af;
+        
+        --color-text-main: #881337;
+        --color-text-muted: #9f1239;
+
+        --color-primary-400: #fb7185;
+        --color-primary-500: #f43f5e;
+        --color-primary-600: #e11d48;
+        --color-primary-900: #881337;
+      }
+      
+      /* 6c. Sky - Light with Sky Blue */
+      [data-theme="sky"] {
+        --color-base-950: #ffffff;
+        --color-base-900: #f0f9ff;
+        --color-base-800: #e0f2fe;
+        --color-base-700: #bae6fd;
+        --color-base-600: #7dd3fc;
+        
+        --color-text-main: #0c4a6e;
+        --color-text-muted: #0369a1;
+
+        --color-primary-400: #38bdf8;
+        --color-primary-500: #0ea5e9;
+        --color-primary-600: #0284c7;
+        --color-primary-900: #0c4a6e;
+      }
+
+      /* 7. Midnight - Pure Black */
+      [data-theme="black"] {
+        --color-base-950: #000000;
+        --color-base-900: #000000;
+        --color-base-800: #171717;
+        --color-base-700: #262626;
+        --color-base-600: #404040;
+        
+        --color-text-main: #ededed;
+        --color-text-muted: #a3a3a3;
+
+        --color-primary-400: #fafafa;
+        --color-primary-500: #ffffff;
+        --color-primary-600: #e5e5e5;
+        --color-primary-900: #262626;
+      }
+      
+      /* 7b. Matrix - Black & Green */
+      [data-theme="matrix"] {
+        --color-base-950: #000000;
+        --color-base-900: #020602;
+        --color-base-800: #052e16;
+        --color-base-700: #14532d;
+        --color-base-600: #166534;
+        
+        --color-text-main: #4ade80;
+        --color-text-muted: #22c55e;
+
+        --color-primary-400: #4ade80;
+        --color-primary-500: #22c55e;
+        --color-primary-600: #16a34a;
+        --color-primary-900: #052e16;
+      }
+      
+      /* 8. Cyberpunk - Neon & Dark Purple */
+      [data-theme="cyberpunk"] {
+        --color-base-950: #0f0014;
+        --color-base-900: #1a0b2e;
+        --color-base-800: #2d1b4e;
+        --color-base-700: #432c7a;
+        --color-base-600: #5b3e96;
+        
+        --color-text-main: #f0e6ff;
+        --color-text-muted: #b9a3e3;
+
+        --color-primary-400: #2dd4bf;
+        --color-primary-500: #14b8a6;
+        --color-primary-600: #0d9488;
+        --color-primary-900: #134e4a;
+      }
+
+      /* 9. High Contrast Dark (Black & White) */
+      [data-theme="high-contrast-dark"] {
+        --color-base-950: #000000;
+        --color-base-900: #000000;
+        --color-base-800: #333333;
+        --color-base-700: #666666;
+        --color-base-600: #999999;
+        
+        --color-text-main: #FFFFFF;
+        --color-text-muted: #DDDDDD;
+
+        --color-primary-400: #FFFFFF;
+        --color-primary-500: #FFFFFF;
+        --color-primary-600: #DDDDDD;
+        --color-primary-900: #333333;
+      }
+
+      /* 10. High Contrast Light (White & Black) */
+      [data-theme="high-contrast-light"] {
+        --color-base-950: #FFFFFF;
+        --color-base-900: #FFFFFF;
+        --color-base-800: #E5E5E5;
+        --color-base-700: #CCCCCC;
+        --color-base-600: #999999;
+        
+        --color-text-main: #000000;
+        --color-text-muted: #333333;
+
+        --color-primary-400: #000000;
+        --color-primary-500: #000000;
+        --color-primary-600: #333333;
+        --color-primary-900: #E5E5E5;
+      }
+
+      /* 11. Supabase - Dark Slate & Green */
+      [data-theme="supabase"] {
+        --color-base-950: #121212;
+        --color-base-900: #1c1c1c;
+        --color-base-800: #292929;
+        --color-base-700: #3e3e3e;
+        --color-base-600: #575757;
+        
+        --color-text-main: #ededed;
+        --color-text-muted: #858585;
+
+        --color-primary-400: #6ee7b7;
+        --color-primary-500: #3ecf8e; /* Supabase Green */
+        --color-primary-600: #10b981;
+        --color-primary-900: #022c22;
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: var(--color-base-800); }
+      ::-webkit-scrollbar-thumb { background: var(--color-base-600); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

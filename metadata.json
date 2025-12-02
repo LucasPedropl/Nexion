@@ -1,0 +1,5 @@
+{
+  "name": "Nexion",
+  "description": "Um organizador de projetos focado em desenvolvedores para documentar projetos, gerenciar tarefas a partir de notas de reuniões e armazenar especificações técnicas. Possui IA Gemini para converter notas brutas em tarefas acionáveis.",
+  "requestFramePermissions": []
+}
