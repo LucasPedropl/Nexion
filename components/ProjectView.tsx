@@ -6,7 +6,7 @@ import {
   ArrowLeft, Save, Trash2, Wand2, FileText, CheckSquare, 
   StickyNote, LayoutTemplate, Plus, Edit2, Check, X, Search, Settings,
   Filter, Layers, UserCircle, ChevronDown, User, Target, LayoutGrid, SquareKanban,
-  Paperclip, Image as ImageIcon, Maximize2
+  Paperclip, Image as ImageIcon, Maximize2, Activity, AlertCircle, Clock, Zap, ArrowRight, FileClock
 } from 'lucide-react';
 import { analyzeNotesToTasks, refineDocumentation } from '../services/geminiService';
 import { ProjectIconDisplay } from './Layout';
@@ -367,6 +367,22 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     }
   };
 
+  // --- DASHBOARD CALCULATIONS (Derived State) ---
+  const currentTasks = getFilteredTasks();
+  const currentDocs = getFilteredDocs();
+  
+  const totalTasks = currentTasks.length;
+  const completedTasks = currentTasks.filter(t => t.status === 'done').length;
+  const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+  
+  const highPriorityTasks = currentTasks.filter(t => t.priority === 'high' && t.status !== 'done');
+  const recentTasks = [...currentTasks].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
+  const recentDocs = [...currentDocs].sort((a,b) => b.lastUpdated - a.lastUpdated).slice(0, 3);
+  
+  // Simple Health Calculation
+  const criticalBugs = currentTasks.filter(t => t.type === 'bug' && t.priority === 'high' && t.status !== 'done').length;
+  const healthStatus = criticalBugs > 2 ? 'at-risk' : 'on-track';
+
   return (
     <div className="flex flex-col bg-base-900 text-base-text min-h-full relative">
       {/* AI Assistant Component Added Here */}
@@ -491,53 +507,230 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         
         {/* TAB: OVERVIEW */}
         {activeTab === 'overview' && (
-          <div className="p-8 max-w-5xl mx-auto min-h-[calc(100vh-10rem)]">
-            <div className="mb-8 flex flex-col md:flex-row gap-8">
-               <div className="flex-1">
-                  <label className="block text-xs uppercase tracking-wider text-base-muted mb-2 font-semibold">Descrição do Projeto</label>
-                  <div className="bg-base-800 border border-base-700 rounded-lg p-4 text-base-text min-h-[6rem] text-sm leading-relaxed">
-                    {project.description || <span className="text-base-muted italic">Sem descrição.</span>}
+          <div className="p-8 max-w-6xl mx-auto min-h-[calc(100vh-10rem)] animate-in fade-in duration-300">
+            
+            {/* Top Section: Health & Summary */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+               {/* Left: Description & Progress */}
+               <div className="lg:col-span-2 flex flex-col gap-6">
+                  <div className="bg-base-800 border border-base-700 rounded-xl p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <h2 className="text-lg font-bold text-base-text flex items-center gap-2">
+                            <Activity size={20} className="text-primary-400" />
+                            Status do Projeto
+                        </h2>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
+                            healthStatus === 'on-track' 
+                                ? 'bg-green-900/20 text-green-400 border-green-900/30' 
+                                : 'bg-red-900/20 text-red-400 border-red-900/30'
+                        }`}>
+                            {healthStatus === 'on-track' ? 'Saudável' : 'Em Risco'}
+                        </span>
+                      </div>
+                      
+                      <div className="text-sm text-base-muted mb-6 leading-relaxed">
+                         {project.description || "Adicione uma descrição para alinhar o objetivo do projeto."}
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div>
+                        <div className="flex justify-between text-xs font-medium text-base-muted mb-2">
+                           <span>Progresso Geral {activeScope !== 'all' ? `(${activeScope})` : ''}</span>
+                           <span>{Math.round(progress)}% Concluído</span>
+                        </div>
+                        <div className="h-3 bg-base-900 rounded-full overflow-hidden border border-base-700/50">
+                           <div 
+                              className="h-full bg-gradient-to-r from-primary-600 to-primary-400 rounded-full transition-all duration-700 ease-out"
+                              style={{ width: `${progress}%` }}
+                           ></div>
+                        </div>
+                        <div className="flex gap-4 mt-3 text-xs text-base-muted">
+                            <span className="flex items-center gap-1"><CheckSquare size={12} /> {completedTasks}/{totalTasks} tarefas</span>
+                            <span className="flex items-center gap-1"><FileText size={12} /> {currentDocs.length} documentos</span>
+                        </div>
+                      </div>
                   </div>
                </div>
-               
-               <div className="w-full md:w-64 space-y-4">
-                  <div>
-                    <label className="block text-xs uppercase tracking-wider text-base-muted mb-2 font-semibold flex items-center gap-1">
-                        <Layers size={12} /> Arquitetura
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                       {(project.subsystems || ['Frontend', 'Backend']).map(s => (
-                          <span key={s} className="text-xs px-2 py-1 bg-base-800 border border-base-700 rounded text-base-text">{s}</span>
-                       ))}
-                    </div>
+
+               {/* Right: Quick Context */}
+               <div className="flex flex-col gap-4">
+                  {/* Architecture Tags */}
+                  <div className="bg-base-800 border border-base-700 rounded-xl p-5 flex-1">
+                     <label className="block text-xs uppercase tracking-wider text-base-muted mb-3 font-semibold flex items-center gap-2">
+                        <Layers size={14} /> Arquitetura
+                     </label>
+                     <div className="flex flex-wrap gap-2">
+                        {(project.subsystems || ['Frontend', 'Backend']).map(s => (
+                           <span key={s} className="text-xs px-2.5 py-1.5 bg-base-900 border border-base-700 rounded-lg text-base-text hover:border-primary-500/50 transition-colors cursor-default">{s}</span>
+                        ))}
+                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs uppercase tracking-wider text-base-muted mb-2 font-semibold flex items-center gap-1">
-                        <UserCircle size={12} /> Atores
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                       {(project.roles || ['Admin', 'User']).map(r => (
-                          <span key={r} className="text-xs px-2 py-1 bg-base-800 border border-base-700 rounded text-base-text">{r}</span>
-                       ))}
-                    </div>
+                  
+                  {/* Role Tags */}
+                  <div className="bg-base-800 border border-base-700 rounded-xl p-5 flex-1">
+                     <label className="block text-xs uppercase tracking-wider text-base-muted mb-3 font-semibold flex items-center gap-2">
+                        <UserCircle size={14} /> Atores
+                     </label>
+                     <div className="flex flex-wrap gap-2">
+                        {(project.roles || ['Admin', 'User']).map(r => (
+                           <span key={r} className="text-xs px-2.5 py-1.5 bg-base-900 border border-base-700 rounded-lg text-base-text hover:border-primary-500/50 transition-colors cursor-default">{r}</span>
+                        ))}
+                     </div>
                   </div>
                </div>
             </div>
 
+            {/* Bento Grid Layout */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Stats Cards showing filtered data depending on scope */}
-              <div className="bg-base-800 p-6 rounded-xl border border-base-700">
-                <div className="text-base-muted text-sm mb-1">Tarefas Pendentes {activeScope !== 'all' && `(${activeScope})`}</div>
-                <div className="text-3xl font-bold text-base-text">{getFilteredTasks().filter(t => t.status === 'todo').length}</div>
-              </div>
-              <div className="bg-base-800 p-6 rounded-xl border border-base-700">
-                <div className="text-base-muted text-sm mb-1">Tarefas Concluídas {activeScope !== 'all' && `(${activeScope})`}</div>
-                <div className="text-3xl font-bold text-green-400">{getFilteredTasks().filter(t => t.status === 'done').length}</div>
-              </div>
-              <div className="bg-base-800 p-6 rounded-xl border border-base-700">
-                <div className="text-base-muted text-sm mb-1">Documentos {activeScope !== 'all' && `(${activeScope})`}</div>
-                <div className="text-3xl font-bold text-blue-400">{getFilteredDocs().length}</div>
-              </div>
+                
+                {/* 1. Radar de Prioridade (High Priority Tasks) */}
+                <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden">
+                    <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
+                        <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
+                            <AlertCircle size={16} className="text-red-400" />
+                            Atenção Necessária
+                        </h3>
+                        <span className="text-xs bg-base-900 px-2 py-0.5 rounded text-base-muted">{highPriorityTasks.length}</span>
+                    </div>
+                    <div className="p-2 flex-1 overflow-y-auto max-h-[300px] custom-scrollbar">
+                        {highPriorityTasks.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-base-muted/50">
+                                <Check size={32} className="mb-2" />
+                                <p className="text-xs">Nenhuma tarefa crítica pendente.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {highPriorityTasks.slice(0, 5).map(task => (
+                                    <div 
+                                        key={task.id} 
+                                        onClick={() => { setActiveTab('tasks'); startEditTask(task); }}
+                                        className="p-3 bg-base-900/50 rounded-lg border border-base-700/50 hover:border-red-500/30 cursor-pointer transition-colors group"
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="text-xs font-medium text-base-text line-clamp-1">{task.title}</span>
+                                            <ArrowRight size={12} className="text-base-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] uppercase text-red-400 bg-red-900/10 px-1.5 py-0.5 rounded border border-red-900/20">Alta</span>
+                                            {task.scope && <span className="text-[10px] text-base-muted truncate">{task.scope}</span>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {highPriorityTasks.length > 0 && (
+                        <div className="p-2 border-t border-base-700/50 text-center">
+                            <button onClick={() => setActiveTab('tasks')} className="text-xs text-primary-400 hover:text-primary-300">Ver todas</button>
+                        </div>
+                    )}
+                </div>
+
+                {/* 2. Timeline de Atividade Recente */}
+                <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden">
+                    <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
+                        <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
+                            <Clock size={16} className="text-blue-400" />
+                            Atividade Recente
+                        </h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto max-h-[300px] custom-scrollbar">
+                         {recentTasks.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-base-muted/50">
+                                <Activity size={32} className="mb-2" />
+                                <p className="text-xs">O projeto ainda não tem atividades.</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-base-700/30">
+                                {recentTasks.map(task => (
+                                    <div 
+                                        key={task.id} 
+                                        onClick={() => { setActiveTab('tasks'); startEditTask(task); }}
+                                        className="p-3 hover:bg-base-700/30 cursor-pointer transition-colors flex gap-3 items-start"
+                                    >
+                                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${task.status === 'done' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
+                                        <div>
+                                            <p className="text-xs font-medium text-base-text line-clamp-1">{task.title}</p>
+                                            <p className="text-[10px] text-base-muted mt-0.5 flex items-center gap-1">
+                                                {task.status === 'done' ? 'Concluída' : 'Criada/Editada'} • {new Date(task.createdAt).toLocaleDateString()}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* 3. Docs & Quick Actions */}
+                <div className="flex flex-col gap-6">
+                    {/* Recent Docs */}
+                    <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden flex-1">
+                        <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
+                            <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
+                                <FileClock size={16} className="text-purple-400" />
+                                Docs Recentes
+                            </h3>
+                        </div>
+                        <div className="p-2 flex-1">
+                            {recentDocs.length === 0 ? (
+                                <p className="text-xs text-base-muted text-center py-4">Nenhum documento.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {recentDocs.map(doc => (
+                                        <button 
+                                            key={doc.id}
+                                            onClick={() => { setActiveTab('docs'); setEditingDocId(doc.id); }}
+                                            className="w-full text-left p-2.5 bg-base-900/30 hover:bg-base-700/50 rounded-lg border border-transparent hover:border-base-600 transition-colors flex items-center gap-2"
+                                        >
+                                            <FileText size={14} className="text-base-muted" />
+                                            <span className="text-xs text-base-text truncate flex-1">{doc.title}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Quick Actions */}
+                    <div className="bg-base-800 border border-base-700 rounded-xl p-4">
+                        <h3 className="font-bold text-base-text flex items-center gap-2 text-sm mb-3">
+                            <Zap size={16} className="text-amber-400" />
+                            Ações Rápidas
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button 
+                                onClick={() => { setActiveTab('tasks'); setShowNewTaskForm(true); }}
+                                className="flex flex-col items-center justify-center p-3 bg-base-900 hover:bg-primary-900/20 border border-base-700 hover:border-primary-500/30 rounded-lg transition-all text-xs font-medium text-base-muted hover:text-primary-400 gap-2"
+                            >
+                                <Plus size={18} />
+                                Nova Tarefa
+                            </button>
+                            <button 
+                                onClick={addNewDoc}
+                                className="flex flex-col items-center justify-center p-3 bg-base-900 hover:bg-primary-900/20 border border-base-700 hover:border-primary-500/30 rounded-lg transition-all text-xs font-medium text-base-muted hover:text-primary-400 gap-2"
+                            >
+                                <FileText size={18} />
+                                Novo Doc
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('board')}
+                                className="flex flex-col items-center justify-center p-3 bg-base-900 hover:bg-primary-900/20 border border-base-700 hover:border-primary-500/30 rounded-lg transition-all text-xs font-medium text-base-muted hover:text-primary-400 gap-2"
+                            >
+                                <SquareKanban size={18} />
+                                Ver Quadro
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('notes')}
+                                className="flex flex-col items-center justify-center p-3 bg-base-900 hover:bg-primary-900/20 border border-base-700 hover:border-primary-500/30 rounded-lg transition-all text-xs font-medium text-base-muted hover:text-primary-400 gap-2"
+                            >
+                                <Wand2 size={18} />
+                                IA Notes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
           </div>
         )}

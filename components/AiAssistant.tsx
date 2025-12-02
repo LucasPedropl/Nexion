@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, FunctionDeclaration, SchemaType, Type } from "@google/genai";
-import { Bot, Send, X, MessageSquare, Loader2, Minimize2, Terminal } from 'lucide-react';
-import { Project, Task, TaskStatus, TaskPriority } from '../types';
+import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
+import { Bot, Send, X, Minimize2, Terminal, Loader2 } from 'lucide-react';
+import { Project, Task, TaskStatus } from '../types';
 
 interface AiAssistantProps {
   project: Project;
@@ -18,7 +18,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', content: 'Olá! Sou seu assistente de projeto. Posso criar tarefas, escrever documentação ou atualizar status para você. Como posso ajudar?' }
+    { role: 'model', content: 'Olá! Sou seu assistente de projeto. Posso criar tarefas, escrever documentação, atualizar status ou mudar a descrição do projeto. Como posso ajudar?' }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -71,6 +71,17 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
         },
         required: ["title", "content"]
       }
+    },
+    {
+      name: "update_project_description",
+      description: "Atualiza a descrição geral ou o resumo do projeto.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          newDescription: { type: Type.STRING, description: "A nova descrição completa do projeto." }
+        },
+        required: ["newDescription"]
+      }
     }
   ];
 
@@ -118,6 +129,11 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
       return `Documento "${newDoc.title}" criado com sucesso.`;
     }
 
+    if (name === 'update_project_description') {
+      onUpdateProject({ ...project, description: args.newDescription });
+      return `Descrição do projeto atualizada com sucesso.`;
+    }
+
     return "Função desconhecida.";
   };
 
@@ -136,9 +152,10 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
       const ai = new GoogleGenAI({ apiKey });
 
       // Preparar Contexto do Sistema com dados ATUAIS do projeto
-      // Isso ajuda a IA a saber quais tarefas existem para atualizar/deletar
       const projectContext = `
         PROJETO ATUAL: ${project.name}
+        DESCRIÇÃO ATUAL: ${project.description}
+        
         TAREFAS EXISTENTES (Use esses IDs para updates):
         ${project.tasks.map(t => `- [${t.status}] ${t.title} (ID: ${t.id}, Prio: ${t.priority})`).join('\n')}
         
@@ -149,8 +166,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
         Sempre que o usuário pedir para mudar algo, chame a função apropriada.
       `;
 
-      // Montar histórico simples para o prompt (limitado para economizar tokens/complexidade no demo)
-      // Em produção, usaria o chat history completo do SDK
+      // Montar histórico simples para o prompt
       const prompt = `
         ${projectContext}
         
@@ -159,17 +175,18 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
         user: ${userMsg}
       `;
 
-      const model = ai.getGenerativeModel({ 
+      // Usando a nova API corretamente: ai.models.generateContent
+      const response = await ai.models.generateContent({ 
         model: "gemini-2.5-flash",
-        systemInstruction: "Você é um assistente prestativo integrado ao app Nexion. Fale Português.",
-        tools: [{ functionDeclarations: tools }]
+        contents: prompt,
+        config: {
+          systemInstruction: "Você é um assistente prestativo integrado ao app Nexion. Fale Português.",
+          tools: [{ functionDeclarations: tools }]
+        }
       });
-
-      const result = await model.generateContent(prompt);
-      const response = result.response;
       
-      // Verificar chamadas de função
-      const functionCalls = response.functionCalls();
+      // Verificar chamadas de função (acesso via propriedade, não método)
+      const functionCalls = response.functionCalls;
 
       if (functionCalls && functionCalls.length > 0) {
         let executionSummary = '';
@@ -181,14 +198,11 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
           executionSummary += output + '\n';
         }
 
-        // Enviar o resultado da execução de volta para a IA gerar a resposta final
-        // Para simplificar neste demo, vamos apenas mostrar o resumo da execução ou pedir uma confirmação final
-        // O ideal seria um loop de turnos, mas aqui faremos uma resposta direta.
         setMessages(prev => [...prev, { role: 'model', content: `Feito:\n${executionSummary}` }]);
 
       } else {
-        // Resposta de texto normal
-        const text = response.text();
+        // Resposta de texto normal (acesso via propriedade)
+        const text = response.text;
         setMessages(prev => [...prev, { role: 'model', content: text || "Não entendi, pode repetir?" }]);
       }
 
