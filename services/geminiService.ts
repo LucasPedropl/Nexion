@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { Task } from "../types";
+import { Task, DiagramType } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
@@ -107,5 +108,63 @@ export const refineDocumentation = async (roughDraft: string): Promise<string> =
   } catch (error) {
     console.error("Erro no refinamento de doc com Gemini:", error);
     return roughDraft;
+  }
+};
+
+export const generateDiagramCode = async (userPrompt: string, projectContext: string, diagramType: DiagramType = 'flowchart'): Promise<string> => {
+  if (!apiKey) return '';
+
+  const diagramTypeInstruction = {
+    'flowchart': 'Use "graph TD" ou "graph LR".',
+    'sequence': 'Use "sequenceDiagram".',
+    'class': 'Use "classDiagram".',
+    'er': 'Use "erDiagram".',
+    'useCase': 'Use "useCaseDiagram" (se suportado) ou "graph TD" simulando estrutura de casos de uso.',
+    'state': 'Use "stateDiagram-v2".',
+    'gantt': 'Use "gantt".',
+    'mindmap': 'Use "mindmap".'
+  };
+
+  try {
+    const prompt = `
+      CONTEXTO DO PROJETO:
+      ${projectContext}
+
+      SOLICITAÇÃO DO USUÁRIO:
+      ${userPrompt}
+
+      TIPO DE DIAGRAMA: ${diagramType}
+      INSTRUÇÃO ESPECÍFICA: ${diagramTypeInstruction[diagramType]}
+
+      TAREFA:
+      Crie um diagrama usando a sintaxe MERMAID.JS que atenda à solicitação do usuário e respeite o tipo solicitado.
+      Retorne APENAS o código Mermaid puro. Não use blocos de código markdown (\`\`\`). Não inclua explicações.
+      
+      Exemplo de Saída Esperada (se for Flowchart):
+      graph TD
+        A[Start] --> B{Is it?}
+        B -- Yes --> C[OK]
+        C --> D[Rethink]
+        D --> B
+        B -- No --> E[End]
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "Você é um especialista em Mermaid.js e arquitetura de software.",
+        temperature: 0.2
+      }
+    });
+
+    let code = response.text || '';
+    // Limpar blocos de código markdown se o modelo insistir em colocá-los
+    code = code.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+    return code;
+
+  } catch (error) {
+    console.error("Erro ao gerar diagrama Mermaid:", error);
+    return '';
   }
 };

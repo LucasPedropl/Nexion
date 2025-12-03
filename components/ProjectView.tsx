@@ -1,16 +1,19 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Project, ProjectTab, Task, TaskStatus, TaskPriority, ProjectNote } from '../types';
+import { Project, ProjectTab, Task, TaskStatus, TaskPriority, ProjectNote, Diagram, DiagramType } from '../types';
 import { 
   ArrowLeft, Save, Trash2, Wand2, FileText, CheckSquare, 
   StickyNote, LayoutTemplate, Plus, Edit2, Check, X, Search, Settings,
   Filter, Layers, UserCircle, ChevronDown, User, Target, LayoutGrid, SquareKanban,
-  Paperclip, Image as ImageIcon, Maximize2, Activity, AlertCircle, Clock, Zap, ArrowRight, FileClock
+  Paperclip, Image as ImageIcon, Maximize2, Activity, AlertCircle, Clock, Zap, ArrowRight, FileClock,
+  Workflow, Play, AlertTriangle, Database, Network, GitGraph, Share2,
+  ZoomIn, ZoomOut, RotateCcw, Move, Copy, Code2
 } from 'lucide-react';
-import { analyzeNotesToTasks, refineDocumentation } from '../services/geminiService';
+import { analyzeNotesToTasks, refineDocumentation, generateDiagramCode } from '../services/geminiService';
 import { ProjectIconDisplay } from './Layout';
 import { AiAssistant } from './AiAssistant';
+// @ts-ignore
+import mermaid from 'mermaid';
 
 interface ProjectViewProps {
   project: Project;
@@ -19,6 +22,282 @@ interface ProjectViewProps {
   onBack: () => void;
   onOpenSettings: () => void;
 }
+
+// Inicializa o Mermaid uma vez
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  securityLevel: 'loose',
+});
+
+// Templates para novos diagramas
+const DIAGRAM_TEMPLATES: Record<DiagramType, string> = {
+  flowchart: 'graph TD\n  A[Início] --> B{Decisão}\n  B -- Sim --> C[Ação 1]\n  B -- Não --> D[Ação 2]',
+  sequence: 'sequenceDiagram\n  Alice->>Bob: Hello Bob, how are you?\n  Bob-->>Alice: I am good thanks!',
+  class: 'classDiagram\n  class Animal{\n    +String name\n    +eat()\n  }\n  class Dog{\n    +bark()\n  }\n  Animal <|-- Dog',
+  er: 'erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  ORDER ||--|{ LINE-ITEM : contains',
+  useCase: 'block-beta\n  columns 3\n  doc("Usuário"):3\n  block:group1:3\n    columns 1\n    task("Login")\n    task("Dashboard")\n  end', 
+  state: 'stateDiagram-v2\n  [*] --> Still\n  Still --> [*]\n  Still --> Moving\n  Moving --> Still\n  Moving --> Crash\n  Crash --> [*]',
+  gantt: 'gantt\n  title A Gantt Diagram\n  dateFormat  YYYY-MM-DD\n  section Section\n  A task           :a1, 2014-01-01, 30d\n  Another task     :after a1  , 20d',
+  mindmap: 'mindmap\n  root((Mindmap))\n    Origins\n      Long history\n      ::icon(fa fa-book)\n      Popularisation\n        British popular psychology author Tony Buzan'
+};
+
+const DIAGRAM_LABELS: Record<DiagramType, string> = {
+  flowchart: 'Fluxograma',
+  sequence: 'Sequência',
+  class: 'Classes',
+  er: 'Banco de Dados (ER)',
+  useCase: 'Caso de Uso',
+  state: 'Estados',
+  gantt: 'Gantt',
+  mindmap: 'Mapa Mental'
+};
+
+// --- VS CODE STYLE EDITOR COMPONENT ---
+const CodeEditor = ({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const linesRef = useRef<HTMLDivElement>(null);
+  const [lineCount, setLineCount] = useState(1);
+  const [currentLine, setCurrentLine] = useState(1);
+
+  useEffect(() => {
+    setLineCount(value.split('\n').length);
+  }, [value]);
+
+  const handleScroll = () => {
+    if (textareaRef.current && linesRef.current) {
+      linesRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Tab indent support
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = e.currentTarget.selectionStart;
+      const end = e.currentTarget.selectionEnd;
+      const newValue = value.substring(0, start) + "  " + value.substring(end);
+      onChange(newValue);
+      
+      // Restore cursor position after state update
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
+        }
+      }, 0);
+    }
+  };
+
+  const handleKeyUp = (e: React.KeyboardEvent<HTMLTextAreaElement> | React.MouseEvent<HTMLTextAreaElement>) => {
+     // Detect current line
+     if (textareaRef.current) {
+        const lines = value.substring(0, textareaRef.current.selectionStart).split('\n');
+        setCurrentLine(lines.length);
+     }
+  };
+
+  return (
+    <div className="flex flex-1 h-full bg-[#1e1e1e] font-mono text-sm overflow-hidden relative group">
+      {/* Line Numbers */}
+      <div 
+        ref={linesRef}
+        className="w-12 flex-shrink-0 bg-[#1e1e1e] text-[#858585] text-right pr-3 pt-4 select-none overflow-hidden border-r border-[#333]"
+        style={{ fontFamily: 'Consolas, "Courier New", monospace', lineHeight: '1.5rem' }}
+      >
+        {Array.from({ length: Math.max(lineCount, 15) }).map((_, i) => (
+          <div key={i} className={`${(i + 1) === currentLine ? 'text-[#c6c6c6] font-bold' : ''}`}>
+            {i + 1}
+          </div>
+        ))}
+      </div>
+
+      {/* Editor Area */}
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={handleScroll}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
+        onClick={handleKeyUp}
+        className="flex-1 bg-transparent text-[#d4d4d4] p-4 outline-none resize-none whitespace-pre border-none leading-6 custom-scrollbar"
+        style={{ fontFamily: 'Consolas, "Courier New", monospace', lineHeight: '1.5rem' }}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoComplete="off"
+      />
+      
+      {/* Active Line Highlight (Visual fake overlay could be complex, simplifying to just line number highlight for now) */}
+      <div className="absolute top-2 right-4 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+         <div className="bg-[#2d2d2d] text-[#858585] text-[10px] px-2 py-1 rounded border border-[#333]">
+            Ln {currentLine}
+         </div>
+      </div>
+    </div>
+  );
+};
+
+// Componente para renderizar diagramas Mermaid com Infinite Canvas
+const MermaidRenderer = ({ code, id }: { code: string; id: string }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Infinite Canvas State
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Render Diagram
+  useEffect(() => {
+    const renderDiagram = async () => {
+      if (!code || !containerRef.current) return;
+      
+      try {
+        const uniqueId = `mermaid-${id}-${Date.now()}`;
+        // Limpa o conteúdo anterior se houver
+        const { svg } = await mermaid.render(uniqueId, code);
+        setSvg(svg);
+        setError(null);
+      } catch (err) {
+        console.warn("Mermaid render error (sometimes transient):", err);
+        setError("Erro de sintaxe. A IA pode ter alucinado ou o código está incompleto.");
+      }
+    };
+
+    const timer = setTimeout(renderDiagram, 500); // Debounce
+    return () => clearTimeout(timer);
+  }, [code, id]);
+
+  // --- Native Wheel Listener (Fix for Ctrl+Scroll Zoom) ---
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheelNative = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const zoomSensitivity = 0.001;
+        setScale(prev => {
+            const newScale = prev - e.deltaY * zoomSensitivity;
+            return Math.min(Math.max(0.1, newScale), 5);
+        });
+      }
+    };
+
+    // Use { passive: false } to allow preventDefault()
+    container.addEventListener('wheel', handleWheelNative, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWheelNative);
+    };
+  }, []);
+
+  // --- Mouse Handlers for Pan ---
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 0) { // Left click only
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      e.preventDefault();
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleZoomIn = () => setScale(prev => Math.min(prev + 0.2, 5));
+  const handleZoomOut = () => setScale(prev => Math.max(prev - 0.2, 0.1));
+  const handleReset = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-red-400 p-8 border border-red-900/30 bg-red-900/10 rounded-lg text-sm select-text">
+        <AlertTriangle className="mb-2" size={24} />
+        <p className="font-bold mb-1">Erro de Renderização</p>
+        <p className="opacity-80 text-center">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="relative w-full h-full overflow-hidden bg-base-950/50 group select-none"
+    >
+      {/* Grid Background that moves with pan */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-20"
+        style={{
+          backgroundImage: `radial-gradient(circle, var(--color-base-600) 1px, transparent 1px)`,
+          backgroundSize: '24px 24px',
+          transform: `translate(${position.x % 24}px, ${position.y % 24}px)` // Modulo for infinite pattern effect
+        }}
+      />
+
+      {/* Canvas */}
+      <div
+        ref={containerRef}
+        className={`w-full h-full flex items-center justify-center ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        <div 
+          style={{
+            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+            transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+          }}
+          className="origin-center p-20"
+          dangerouslySetInnerHTML={{ __html: svg }} 
+        />
+      </div>
+
+      {/* Floating Controls */}
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 bg-base-800 p-2 rounded-lg border border-base-700 shadow-xl z-10 opacity-80 hover:opacity-100 transition-opacity">
+         <button 
+           onClick={handleZoomIn} 
+           className="p-2 hover:bg-base-700 rounded-md text-base-text transition-colors"
+           title="Zoom In"
+         >
+           <ZoomIn size={18}/>
+         </button>
+         <button 
+           onClick={handleZoomOut} 
+           className="p-2 hover:bg-base-700 rounded-md text-base-text transition-colors"
+           title="Zoom Out"
+         >
+           <ZoomOut size={18}/>
+         </button>
+         <div className="h-px bg-base-700 my-1"></div>
+         <button 
+           onClick={handleReset} 
+           className="p-2 hover:bg-base-700 rounded-md text-base-text transition-colors"
+           title="Reset View"
+         >
+           <RotateCcw size={18}/>
+         </button>
+      </div>
+      
+      {/* Instructions Hint */}
+      <div className="absolute bottom-4 left-4 text-[10px] text-base-muted bg-base-900/80 px-2 py-1 rounded border border-base-800 pointer-events-none opacity-50">
+         Segure Cntrl + Scroll para Zoom • Arraste para mover
+      </div>
+    </div>
+  );
+};
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ 
   project, 
@@ -61,6 +340,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   // Lightbox State
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Diagram State
+  const [editingDiagramId, setEditingDiagramId] = useState<string | null>(null);
+  const [diagramPrompt, setDiagramPrompt] = useState('');
+  const [isDiagramGenerating, setIsDiagramGenerating] = useState(false);
 
   // References for file inputs
   const taskFileInputRef = useRef<HTMLInputElement>(null);
@@ -194,42 +478,38 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
       // --- LOGICA DE DISTRIBUIÇÃO DE IMAGENS ---
       // Estratégia: Sequencial + Overflow
-      // Tarefa 0 <- Imagem 0
-      // Tarefa 1 <- Imagem 1
-      // ...
-      // Tarefa N (Última) <- Imagem N, Imagem N+1, Imagem N+2...
-      
       const typedTasks: Task[] = newTasksRaw.map((t, index) => {
-        // Determina quais anexos vão para esta tarefa
         let myAttachments: string[] = [];
 
         if (noteAttachments.length > 0) {
           if (newTasksRaw.length === 1) {
-             // Se só gerou uma tarefa, ela recebe tudo
              myAttachments = [...noteAttachments];
           } else if (index < newTasksRaw.length - 1) {
-             // Tarefas intermediárias pegam 1 imagem se existir
              if (noteAttachments[index]) {
                myAttachments = [noteAttachments[index]];
              }
           } else {
-             // A última tarefa pega sua correspondente + todo o resto (overflow)
              myAttachments = noteAttachments.slice(index);
           }
         }
 
-        return {
+        const newTask: Task = {
           id: crypto.randomUUID(),
           title: t.title || "Tarefa sem título",
           description: t.description || "",
           type: (t.type as any) || 'task',
           priority: (t.priority as any) || 'medium',
           status: 'todo',
-          scope: t.scope, 
-          role: t.role,
           createdAt: Date.now(),
           attachments: myAttachments
         };
+
+        // Somente adiciona scope e role se existirem e não forem undefined
+        // Firestore rejeita campos explicitamente undefined
+        if (t.scope) newTask.scope = t.scope;
+        if (t.role) newTask.role = t.role;
+
+        return newTask;
       });
       
       onUpdateProject({
@@ -358,6 +638,72 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     setIsAiLoading(false);
   };
 
+  // --- Diagrams Logic ---
+  const addNewDiagram = () => {
+    const newDiagram: Diagram = {
+      id: crypto.randomUUID(),
+      title: 'Novo Fluxograma',
+      type: 'flowchart',
+      code: DIAGRAM_TEMPLATES['flowchart'],
+      createdAt: Date.now()
+    };
+    const currentDiagrams = project.diagrams || [];
+    onUpdateProject({ ...project, diagrams: [newDiagram, ...currentDiagrams] });
+    setEditingDiagramId(newDiagram.id);
+  };
+
+  const updateDiagram = (id: string, updates: Partial<Diagram>) => {
+    const currentDiagrams = project.diagrams || [];
+    const updatedDiagrams = currentDiagrams.map(d => d.id === id ? { ...d, ...updates } : d);
+    onUpdateProject({ ...project, diagrams: updatedDiagrams });
+  };
+
+  const handleDiagramTypeChange = (id: string, newType: DiagramType) => {
+    const currentDiagrams = project.diagrams || [];
+    const diagram = currentDiagrams.find(d => d.id === id);
+    if (!diagram) return;
+
+    // Check if code is empty or matches a default template (to safely overwrite)
+    const isDefault = !diagram.code.trim() || Object.values(DIAGRAM_TEMPLATES).includes(diagram.code.trim());
+    
+    updateDiagram(id, {
+        type: newType,
+        // Only update code if it's "clean", otherwise keep user's code but change type tag
+        code: isDefault ? DIAGRAM_TEMPLATES[newType] : diagram.code 
+    });
+  };
+
+  const deleteDiagram = (id: string) => {
+    if(confirm("Excluir este diagrama?")) {
+      const currentDiagrams = project.diagrams || [];
+      const updatedDiagrams = currentDiagrams.filter(d => d.id !== id);
+      onUpdateProject({ ...project, diagrams: updatedDiagrams });
+      if(editingDiagramId === id) setEditingDiagramId(null);
+    }
+  };
+
+  const handleGenerateDiagram = async (id: string, type: DiagramType) => {
+    if (!diagramPrompt.trim()) return;
+    setIsDiagramGenerating(true);
+    
+    // Prepare project context summary
+    const projectContext = `
+      Projeto: ${project.name}
+      Descrição: ${project.description}
+      Tarefas principais: ${project.tasks.slice(0, 5).map(t => t.title).join(', ')}
+      Módulos: ${(project.subsystems || []).join(', ')}
+      Atores: ${(project.roles || []).join(', ')}
+    `;
+
+    const code = await generateDiagramCode(diagramPrompt, projectContext, type);
+    if (code) {
+      updateDiagram(id, { code });
+      setDiagramPrompt('');
+    }
+    setIsDiagramGenerating(false);
+  };
+
+
   const getPriorityColor = (p: TaskPriority) => {
     switch(p) {
         case 'high': return 'text-red-400 bg-red-400/10 border-red-400/20';
@@ -479,18 +825,19 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       </div>
 
       {/* Tabs - Sticky */}
-      <div className="flex items-center gap-1 px-6 pt-4 border-b border-base-800 bg-base-900 sticky top-16 z-20 flex-shrink-0">
+      <div className="flex items-center gap-1 px-6 pt-4 border-b border-base-800 bg-base-900 sticky top-16 z-20 flex-shrink-0 overflow-x-auto">
         {[
           { id: 'overview', label: 'Visão Geral', icon: LayoutTemplate },
           { id: 'tasks', label: 'Tarefas', icon: CheckSquare },
           { id: 'board', label: 'Quadro', icon: SquareKanban },
           { id: 'notes', label: 'Anotações (IA)', icon: StickyNote },
           { id: 'docs', label: 'Documentação', icon: FileText },
+          { id: 'diagrams', label: 'Diagramas', icon: Workflow },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as ProjectTab)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === tab.id 
                 ? 'border-primary-500 text-primary-400' 
                 : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-800/50 rounded-t-md'
@@ -721,11 +1068,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                                 Ver Quadro
                             </button>
                             <button 
-                                onClick={() => setActiveTab('notes')}
+                                onClick={() => setActiveTab('diagrams')}
                                 className="flex flex-col items-center justify-center p-3 bg-base-900 hover:bg-primary-900/20 border border-base-700 hover:border-primary-500/30 rounded-lg transition-all text-xs font-medium text-base-muted hover:text-primary-400 gap-2"
                             >
-                                <Wand2 size={18} />
-                                IA Notes
+                                <Workflow size={18} />
+                                Diagramas
                             </button>
                         </div>
                     </div>
@@ -735,7 +1082,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: TASKS */}
+        {/* TAB: TASKS (Mantido como estava) */}
         {activeTab === 'tasks' && (
           <div className="flex flex-col p-6 max-w-5xl mx-auto min-h-[calc(100vh-10rem)]">
             <div className="flex justify-between items-center mb-6">
@@ -1204,7 +1551,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         {/* TAB: DOCS */}
         {activeTab === 'docs' && (
           <div className="flex items-start min-h-[calc(100vh-10rem)]">
-            {/* Sidebar de Documentos - Sticky para não rolar com o conteúdo */}
+            {/* Sidebar de Documentos */}
             <div className="w-64 border-r border-base-800 bg-base-950/30 flex flex-col sticky top-[8rem] h-[calc(100vh-8rem)]">
               <div className="p-4 border-b border-base-800 flex-shrink-0">
                 <button 
@@ -1248,7 +1595,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
               </div>
             </div>
 
-            {/* Área de Edição - Rola com a página */}
+            {/* Área de Edição */}
             <div className="flex-1 flex flex-col bg-base-900 min-h-[calc(100vh-10rem)]">
               {editingDocId ? (
                 (() => {
@@ -1313,6 +1660,145 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                 <div className="flex-1 flex flex-col items-center justify-center text-base-muted">
                   <FileText size={48} className="mb-4 opacity-20" />
                   <p>Selecione um documento para editar ou crie um novo.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: DIAGRAMS (New) */}
+        {activeTab === 'diagrams' && (
+          <div className="flex items-start min-h-[calc(100vh-10rem)]">
+            {/* Sidebar Diagramas */}
+            <div className="w-64 border-r border-base-800 bg-base-950/30 flex flex-col sticky top-[8rem] h-[calc(100vh-8rem)]">
+              <div className="p-4 border-b border-base-800 flex-shrink-0">
+                <button 
+                  onClick={addNewDiagram}
+                  className="w-full flex items-center justify-center gap-2 bg-base-800 hover:bg-base-700 text-base-text py-2 rounded-lg text-sm transition-colors border border-base-700"
+                >
+                  <Plus size={14} /> Novo Diagrama
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                {(project.diagrams || []).map(diag => (
+                  <div key={diag.id} className="flex group">
+                      <button
+                        onClick={() => setEditingDiagramId(diag.id)}
+                        className={`flex-1 text-left px-3 py-2 rounded-l-md text-sm truncate transition-colors flex items-center gap-2 ${
+                          editingDiagramId === diag.id 
+                            ? 'bg-primary-500/10 text-primary-400 font-medium' 
+                            : 'text-base-muted hover:bg-base-800 hover:text-base-text'
+                        }`}
+                      >
+                         <span className="truncate">{diag.title}</span>
+                      </button>
+                      <button 
+                        onClick={() => deleteDiagram(diag.id)}
+                        className={`px-2 rounded-r-md hover:text-red-400 ${
+                            editingDiagramId === diag.id ? 'bg-primary-500/10 text-primary-400' : 'text-base-muted hover:bg-base-800'
+                        }`}
+                      >
+                          <X size={12} />
+                      </button>
+                  </div>
+                ))}
+                {(project.diagrams || []).length === 0 && (
+                   <div className="px-3 py-4 text-xs text-base-muted text-center italic">
+                      Nenhum diagrama.
+                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Área Principal Diagramas */}
+            <div className="flex-1 flex flex-col bg-base-900 min-h-[calc(100vh-10rem)]">
+              {editingDiagramId ? (
+                (() => {
+                  const diagram = (project.diagrams || []).find(d => d.id === editingDiagramId);
+                  if (!diagram) return null;
+                  return (
+                    <div className="flex flex-col h-[calc(100vh-10rem)]">
+                      {/* Diagram Header */}
+                      <div className="h-14 border-b border-base-800 flex items-center justify-between px-6 bg-base-900 flex-shrink-0">
+                        <div className="flex items-center gap-4 flex-1 mr-4">
+                           <input 
+                             value={diagram.title}
+                             onChange={(e) => updateDiagram(diagram.id, { title: e.target.value })}
+                             className="bg-transparent font-bold text-lg text-base-text focus:outline-none flex-1 min-w-0"
+                             placeholder="Título do Diagrama"
+                           />
+                           
+                           {/* Diagram Type Selector */}
+                           <div className="relative">
+                              <select 
+                                value={diagram.type || 'flowchart'}
+                                onChange={(e) => handleDiagramTypeChange(diagram.id, e.target.value as DiagramType)}
+                                className="bg-base-800 border border-base-700 rounded-lg px-3 py-1.5 text-xs text-base-text focus:outline-none focus:border-primary-500 appearance-none pr-8 cursor-pointer hover:bg-base-700 transition-colors"
+                              >
+                                {Object.entries(DIAGRAM_LABELS).map(([key, label]) => (
+                                    <option key={key} value={key}>{label}</option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-base-muted pointer-events-none" />
+                           </div>
+                        </div>
+                        
+                        <div className="text-xs text-base-muted flex items-center gap-2">
+                          <span className="opacity-50">Mermaid.js</span>
+                        </div>
+                      </div>
+
+                      {/* Diagram Split View */}
+                      <div className="flex-1 flex overflow-hidden">
+                        {/* Editor (Left) */}
+                        <div className="w-1/3 border-r border-base-800 flex flex-col bg-base-950/50 z-20">
+                          {/* NEW CODE EDITOR COMPONENT */}
+                          <CodeEditor 
+                             value={diagram.code}
+                             onChange={(newCode) => updateDiagram(diagram.id, { code: newCode })}
+                          />
+                          
+                          {/* AI Prompt Area */}
+                          <div className="p-4 border-t border-[#333] bg-[#1e1e1e]">
+                             <div className="relative">
+                               <textarea
+                                 value={diagramPrompt}
+                                 onChange={(e) => setDiagramPrompt(e.target.value)}
+                                 placeholder={`Descreva o diagrama ${DIAGRAM_LABELS[diagram.type || 'flowchart']} que deseja...`}
+                                 className="w-full bg-[#2d2d2d] border border-[#333] rounded-lg pl-3 pr-10 py-2 text-xs text-[#d4d4d4] focus:border-primary-500 outline-none resize-none h-16"
+                               />
+                               <button 
+                                 onClick={() => handleGenerateDiagram(diagram.id, diagram.type || 'flowchart')}
+                                 disabled={isDiagramGenerating || !diagramPrompt.trim()}
+                                 className="absolute bottom-2 right-2 p-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-md disabled:opacity-50 transition-colors"
+                                 title="Gerar com IA"
+                               >
+                                 {isDiagramGenerating ? <Activity size={14} className="animate-spin" /> : <Play size={14} />}
+                               </button>
+                             </div>
+                             <p className="text-[10px] text-[#858585] mt-2 flex gap-1">
+                               <Wand2 size={10} />
+                               A IA usará o contexto do projeto para gerar o diagrama do tipo selecionado.
+                             </p>
+                          </div>
+                        </div>
+
+                        {/* Preview (Right) - Infinite Canvas */}
+                        <div className="flex-1 bg-base-900 relative overflow-hidden flex flex-col z-10">
+                          <div className="flex-1 relative">
+                             <div className="absolute inset-0">
+                                <MermaidRenderer code={diagram.code} id={diagram.id} />
+                             </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-base-muted">
+                  <Workflow size={48} className="mb-4 opacity-20" />
+                  <p>Selecione um diagrama ou crie um novo.</p>
                 </div>
               )}
             </div>

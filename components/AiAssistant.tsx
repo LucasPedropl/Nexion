@@ -98,10 +98,13 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ project, onUpdateProje
         priority: args.priority || 'medium',
         status: 'todo',
         type: 'task',
-        scope: args.scope || undefined,
         createdAt: Date.now(),
         attachments: []
       };
+      
+      // Só adiciona scope se tiver valor
+      if (args.scope) newTask.scope = args.scope;
+
       onUpdateProject({ ...project, tasks: [newTask, ...project.tasks] });
       return `Tarefa criada com sucesso: ID ${newTask.id} - ${newTask.title}`;
     }

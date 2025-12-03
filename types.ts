@@ -32,6 +32,24 @@ export interface ProjectNote {
   lastUpdated: number;
 }
 
+export type DiagramType = 
+  | 'flowchart' 
+  | 'sequence' 
+  | 'class' 
+  | 'er' 
+  | 'useCase' 
+  | 'state' 
+  | 'gantt' 
+  | 'mindmap';
+
+export interface Diagram {
+  id: string;
+  title: string;
+  type: DiagramType;
+  code: string; // Mermaid code
+  createdAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -39,6 +57,7 @@ export interface Project {
   tasks: Task[];
   notes: ProjectNote[] | string; // Support legacy string for migration
   docs: Documentation[];
+  diagrams: Diagram[];
   
   // Architecture & Actors
   subsystems: string[]; // ['Frontend', 'Backend', 'Mobile', 'DevOps']
@@ -50,7 +69,7 @@ export interface Project {
 }
 
 export type ViewMode = 'dashboard' | 'project' | 'settings' | 'project-settings';
-export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs';
+export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs' | 'diagrams';
 
 export type ThemeId = 
   | 'cosmic' 

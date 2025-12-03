@@ -50,7 +50,11 @@ export const getProjects = async (): Promise<Project[]> => {
         roles: data.roles || ['Admin', 'User'],
         notes: typeof data.notes === 'string' 
           ? [{ scope: 'general', content: data.notes, lastUpdated: Date.now() }] 
-          : (data.notes || [])
+          : (data.notes || []),
+        diagrams: (data.diagrams || []).map(d => ({
+          ...d,
+          type: d.type || 'flowchart' // Default type for legacy diagrams
+        }))
       };
     });
     
@@ -76,8 +80,12 @@ export const saveProject = async (project: Project): Promise<void> => {
     return;
   }
   try {
+    // Firestore não aceita 'undefined'. Removemos campos undefined antes de salvar.
+    // O jeito mais simples e seguro para objetos puros (sem functions) é JSON stringify/parse.
+    const cleanProject = JSON.parse(JSON.stringify(project));
+    
     // setDoc com merge: true ou sobrescrita direta. 
-    await setDoc(doc(db, "projects", project.id), project);
+    await setDoc(doc(db, "projects", project.id), cleanProject);
   } catch (error) {
     console.error("Erro ao salvar projeto no Firebase:", error);
     throw error;
@@ -101,6 +109,7 @@ export const createInitialProject = (): Project => ({
   tasks: [],
   notes: [], // Initialize as array
   docs: [],
+  diagrams: [],
   createdAt: Date.now(),
   order: 0, // Put new projects at the top by default (or manage logic in App)
   icon: "rocket",
