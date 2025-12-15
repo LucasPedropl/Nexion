@@ -6,10 +6,9 @@ import { githubApi, GithubFile, GithubCommit } from '../services/githubService';
 import { 
     FolderGit2, GitBranch, FileCode, ChevronRight, ChevronDown, 
     RefreshCw, GitCommit, FileText, Folder, ArrowLeft,
-    AlertCircle, Save, Loader2, History, Code2, User, BookOpen, Plus, Clock, Rocket
+    AlertCircle, Save, Loader2, History, Code2, User, BookOpen, Plus, Clock
 } from 'lucide-react';
 import { marked } from 'marked';
-import { WebContainerPreview } from './WebContainerPreview';
 
 interface RepositoryManagerProps {
     project: Project;
@@ -42,7 +41,7 @@ export const RepositoryManager: React.FC<RepositoryManagerProps> = ({ project })
     const [commitMessage, setCommitMessage] = useState('');
     
     // History State & Navigation
-    const [activeTab, setActiveTab] = useState<'code' | 'history' | 'readme' | 'deploy'>('code');
+    const [activeTab, setActiveTab] = useState<'code' | 'history' | 'readme'>('code');
     const [commits, setCommits] = useState<GithubCommit[]>([]);
     const [isLoadingCommits, setIsLoadingCommits] = useState(false);
     
@@ -92,9 +91,6 @@ export const RepositoryManager: React.FC<RepositoryManagerProps> = ({ project })
     useEffect(() => {
         if (!selectedRepo || !user?.githubToken) return;
         
-        // Don't fetch files if in deploy tab
-        if (activeTab === 'deploy') return;
-
         const loadFiles = async () => {
             setIsLoadingFiles(true);
             try {
@@ -117,7 +113,7 @@ export const RepositoryManager: React.FC<RepositoryManagerProps> = ({ project })
             }
         };
         loadFiles();
-    }, [selectedRepo, currentBranch, currentPath, user, historySha, activeTab]);
+    }, [selectedRepo, currentBranch, currentPath, user, historySha]);
 
     // Fetch Readme (Considers Branch OR History SHA)
     useEffect(() => {
@@ -341,12 +337,6 @@ export const RepositoryManager: React.FC<RepositoryManagerProps> = ({ project })
                     >
                         <History size={14} /> Histórico
                     </button>
-                    <button 
-                        onClick={() => setActiveTab('deploy')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${activeTab === 'deploy' ? 'bg-primary-600 text-white shadow-sm' : 'text-base-muted hover:text-base-text'}`}
-                    >
-                        <Rocket size={14} /> Deploy
-                    </button>
                 </div>
             </div>
 
@@ -358,13 +348,6 @@ export const RepositoryManager: React.FC<RepositoryManagerProps> = ({ project })
                         <span>Visualizando histórico no commit <strong>{historySha.substring(0, 7)}</strong> (Apenas Leitura)</span>
                     </div>
                     <button onClick={exitHistoryMode} className="underline hover:text-white">Voltar para atual</button>
-                </div>
-            )}
-
-            {/* --- TAB CONTENT: DEPLOY (WEB CONTAINER) --- */}
-            {activeTab === 'deploy' && (
-                <div className="flex-1 overflow-hidden relative">
-                    <WebContainerPreview repoUrl={selectedRepo} branch={currentBranch} />
                 </div>
             )}
 
