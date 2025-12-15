@@ -161,5 +161,33 @@ export const githubApi = {
         }
 
         return await res.json();
+    },
+
+    // Get full repository tree (Recursive) - CRITICAL FOR DEPLOY
+    getRepoTree: async (token: string, owner: string, repo: string, branch: string = 'main') => {
+        // 1. Get SHA of the branch head
+        const refUrl = `${BASE_URL}/repos/${owner}/${repo}/git/ref/heads/${branch}`;
+        const refRes = await fetch(refUrl, { headers: githubApi.getHeaders(token) });
+        if (!refRes.ok) throw new Error('Failed to get branch ref');
+        const refData = await refRes.json();
+        const treeSha = refData.object.sha;
+
+        // 2. Get the Tree recursively
+        const treeUrl = `${BASE_URL}/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`;
+        const treeRes = await fetch(treeUrl, { headers: githubApi.getHeaders(token) });
+        if (!treeRes.ok) throw new Error('Failed to get repo tree');
+        const treeData = await treeRes.json();
+        
+        return treeData.tree; // Array of objects { path, mode, type, sha, url }
+    },
+
+    // Fetch Blob content by SHA (more efficient for batch downloading)
+    getBlob: async (token: string, owner: string, repo: string, fileSha: string) => {
+        const url = `${BASE_URL}/repos/${owner}/${repo}/git/blobs/${fileSha}`;
+        const res = await fetch(url, { headers: githubApi.getHeaders(token) });
+        if (!res.ok) throw new Error('Failed to get blob');
+        const data = await res.json();
+        // content is base64
+        return new TextDecoder().decode(Uint8Array.from(atob(data.content), c => c.charCodeAt(0)));
     }
 };
