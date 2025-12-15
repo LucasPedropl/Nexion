@@ -143,7 +143,9 @@ export const getProjects = async (user: User): Promise<Project[]> => {
 				icon: data.icon || 'code',
 				subsystems: data.subsystems || ['Frontend', 'Backend'],
 				roles: data.roles || ['Admin', 'User'],
-                ownerId: data.ownerId || user.uid,
+                // BUGFIX: Não usar user.uid como fallback para ownerId. 
+                // Se ownerId estiver faltando em um projeto compartilhado, isso faria o membro parecer dono localmente.
+                ownerId: data.ownerId || '', 
                 members: data.members || [],
                 team: team,
                 githubRepos: data.githubRepos || [], // Initialize repos

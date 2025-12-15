@@ -95,7 +95,8 @@ export const AuthPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-base-950 flex flex-col items-center justify-center p-4 relative">
       
-      {!isRestrictedEnv && (
+      {/* Botão Copiar URL - APENAS no ambiente de preview/restrito */}
+      {isRestrictedEnv && (
         <button 
             onClick={handleCopyUrl}
             className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 bg-base-900 border border-base-800 rounded-lg text-xs font-medium text-base-muted hover:text-primary-400 hover:border-primary-500/30 transition-all shadow-sm z-50"
@@ -147,18 +148,17 @@ export const AuthPage: React.FC = () => {
           )}
 
           <div className="space-y-3">
-             <button 
-                onClick={handleDevLogin}
-                disabled={isLoading}
-                className={`w-full font-medium py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg ${
-                    isRestrictedEnv 
-                        ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/20 border border-amber-400/50' 
-                        : 'bg-amber-900/20 hover:bg-amber-900/30 text-amber-500 border border-amber-900/50'
-                }`}
-              >
-                 <Bug size={18} />
-                 {isRestrictedEnv ? "Entrar com Modo Teste" : "Modo Teste (Bypass)"}
-              </button>
+             {/* Botão Modo Teste - APENAS no ambiente de preview/restrito */}
+             {isRestrictedEnv && (
+                 <button 
+                    onClick={handleDevLogin}
+                    disabled={isLoading}
+                    className="w-full font-medium py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/20 border border-amber-400/50"
+                  >
+                     <Bug size={18} />
+                     Entrar com Modo Teste
+                  </button>
+             )}
 
              <div className="grid grid-cols-2 gap-3">
                  <button 

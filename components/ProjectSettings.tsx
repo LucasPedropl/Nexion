@@ -4,7 +4,7 @@ import { Project, ProjectRole } from '../types';
 import { 
   ArrowLeft, Trash2, Save, LayoutTemplate, Palette, 
   Users, Plug2, AlertTriangle, ShieldAlert, Upload, Image as ImageIcon, Link,
-  Layers, Plus, X, Mail, Shield, ShieldCheck, Eye, Clock, Check, LogOut, UserCheck, Crown, AtSign, Search, Loader2, FolderGit2, Github
+  Layers, Plus, X, Mail, Shield, ShieldCheck, Eye, Clock, Check, LogOut, UserCheck, Crown, AtSign, Search, Loader2, FolderGit2, Github, Building2, User
 } from 'lucide-react';
 import { iconMap, ProjectIconDisplay } from './Layout';
 import { auth, findUserByEmail, searchUsersByNickname } from '../services/auth';
@@ -19,6 +19,7 @@ interface ProjectSettingsProps {
 }
 
 type SettingsTab = 'general' | 'architecture' | 'team' | 'repos' | 'integrations' | 'danger';
+type RepoFilter = 'all' | 'owner' | 'organization';
 
 export const ProjectSettings: React.FC<ProjectSettingsProps> = ({ 
   project, 
@@ -53,6 +54,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   const [isLoadingGithub, setIsLoadingGithub] = useState(false);
   const [repoSearch, setRepoSearch] = useState('');
   const [showGithubList, setShowGithubList] = useState(false);
+  const [repoFilter, setRepoFilter] = useState<RepoFilter>('all');
   
   // Toast Notification State
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error', visible: boolean }>({
@@ -311,8 +313,8 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       setIsLoadingGithub(true);
       setShowGithubList(true);
       try {
-          // Fetch user repos (sorted by updated to show most relevant first)
-          const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+          // Fetch user repos with type=all to include private/org repos
+          const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&type=all', {
               headers: {
                   Authorization: `Bearer ${currentUser.githubToken}`,
                   Accept: 'application/vnd.github.v3+json'
@@ -391,9 +393,15 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
     );
   };
 
-  const filteredGithubRepos = githubReposList.filter(r => 
-      r.full_name.toLowerCase().includes(repoSearch.toLowerCase())
-  );
+  const filteredGithubRepos = githubReposList.filter(r => {
+      const matchesSearch = r.full_name.toLowerCase().includes(repoSearch.toLowerCase());
+      const matchesFilter = repoFilter === 'all' 
+          ? true 
+          : repoFilter === 'owner' 
+              ? r.owner.type === 'User' 
+              : r.owner.type === 'Organization';
+      return matchesSearch && matchesFilter;
+  });
 
   return (
     <div className="flex flex-col bg-base-900 text-base-text min-h-full relative">
@@ -630,7 +638,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
              </div>
           )}
 
-          {/* TAB: REPOS (Enhanced with GitHub API) */}
+          {/* TAB: REPOS (Enhanced with GitHub API & Filtering) */}
           {activeTab === 'repos' && (
              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="mb-8">
@@ -693,11 +701,32 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                     </button>
                                 ) : (
                                     <div className="animate-in fade-in duration-300">
+                                        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+                                            <button 
+                                                onClick={() => setRepoFilter('all')}
+                                                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors border ${repoFilter === 'all' ? 'bg-primary-600 text-white border-primary-500' : 'bg-base-900 text-base-muted border-base-700 hover:text-base-text'}`}
+                                            >
+                                                Todos
+                                            </button>
+                                            <button 
+                                                onClick={() => setRepoFilter('owner')}
+                                                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors border flex items-center gap-1 ${repoFilter === 'owner' ? 'bg-primary-600 text-white border-primary-500' : 'bg-base-900 text-base-muted border-base-700 hover:text-base-text'}`}
+                                            >
+                                                <User size={12} /> Pessoais
+                                            </button>
+                                            <button 
+                                                onClick={() => setRepoFilter('organization')}
+                                                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors border flex items-center gap-1 ${repoFilter === 'organization' ? 'bg-primary-600 text-white border-primary-500' : 'bg-base-900 text-base-muted border-base-700 hover:text-base-text'}`}
+                                            >
+                                                <Building2 size={12} /> Organizações
+                                            </button>
+                                        </div>
+
                                         <div className="relative mb-3">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-base-muted" size={14} />
                                             <input 
                                                 type="text" 
-                                                placeholder="Filtrar repositórios..." 
+                                                placeholder="Filtrar por nome..." 
                                                 value={repoSearch}
                                                 onChange={(e) => setRepoSearch(e.target.value)}
                                                 className="w-full bg-base-900 border border-base-700 rounded-lg pl-9 pr-3 py-2 text-xs focus:border-primary-500 outline-none"
@@ -711,11 +740,15 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                                 <div className="divide-y divide-base-800">
                                                     {filteredGithubRepos.map((repo) => {
                                                         const isAdded = (project.githubRepos || []).includes(repo.html_url);
+                                                        const isOrg = repo.owner.type === 'Organization';
                                                         return (
                                                             <div key={repo.id} className="flex items-center justify-between p-3 hover:bg-base-800 transition-colors">
                                                                 <div className="min-w-0 flex-1 pr-2">
-                                                                    <p className="text-sm font-medium text-base-text truncate">{repo.full_name}</p>
-                                                                    <p className="text-[10px] text-base-muted flex gap-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {isOrg ? <Building2 size={12} className="text-base-muted" /> : <User size={12} className="text-base-muted" />}
+                                                                        <p className="text-sm font-medium text-base-text truncate">{repo.full_name}</p>
+                                                                    </div>
+                                                                    <p className="text-[10px] text-base-muted flex gap-2 ml-5">
                                                                         <span>{repo.private ? '🔒 Privado' : 'Publico'}</span>
                                                                         <span>•</span>
                                                                         <span>⭐ {repo.stargazers_count}</span>
