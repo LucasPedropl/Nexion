@@ -14,60 +14,59 @@ import {
     addDoc
 } from 'firebase/firestore';
 import { Project, Notification, ProjectRole, TeamMember } from '../types';
-import { CREDENTIALS } from '../credentials';
 import { User } from 'firebase/auth';
 
-// Lê credenciais do ambiente ou do arquivo de fallback
+// Lê credenciais somente das variáveis de ambiente. Configure-as no Vercel para evitar bundling de arquivos locais.
 const firebaseConfig = {
-	apiKey:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_API_KEY) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_API_KEY
-			: '') ||
-        CREDENTIALS.firebase.apiKey,
-	authDomain:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_AUTH_DOMAIN
-			: '') ||
-        CREDENTIALS.firebase.authDomain,
-	projectId:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_PROJECT_ID) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_PROJECT_ID
-			: '') ||
-        CREDENTIALS.firebase.projectId,
-	storageBucket:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_STORAGE_BUCKET
-			: '') ||
-        CREDENTIALS.firebase.storageBucket,
-	messagingSenderId:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-			: '') ||
-        CREDENTIALS.firebase.messagingSenderId,
-	appId:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_APP_ID) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_APP_ID
-			: '') ||
-        CREDENTIALS.firebase.appId,
-	measurementId:
-		(typeof import.meta !== 'undefined' &&
-			(import.meta as any).env?.VITE_FIREBASE_MEASUREMENT_ID) ||
-		(typeof process !== 'undefined'
-			? process.env.VITE_FIREBASE_MEASUREMENT_ID
-			: '') ||
-        CREDENTIALS.firebase.measurementId,
+    apiKey:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_API_KEY) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_API_KEY
+            : '') ||
+        '',
+    authDomain:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_AUTH_DOMAIN
+            : '') ||
+        '',
+    projectId:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_PROJECT_ID
+            : '') ||
+        '',
+    storageBucket:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_STORAGE_BUCKET
+            : '') ||
+        '',
+    messagingSenderId:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
+            : '') ||
+        '',
+    appId:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_APP_ID) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_APP_ID
+            : '') ||
+        '',
+    measurementId:
+        (typeof import.meta !== 'undefined' &&
+            (import.meta as any).env?.VITE_FIREBASE_MEASUREMENT_ID) ||
+        (typeof process !== 'undefined'
+            ? process.env.VITE_FIREBASE_MEASUREMENT_ID
+            : '') ||
+        '',
 };
 
 // Inicialização do Firebase

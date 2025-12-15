@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { Bot, Send, X, Minimize2, Terminal, Loader2 } from 'lucide-react';
 import { Project, Task, TaskStatus } from '../types';
-import { CREDENTIALS } from '../credentials';
 import { auth } from '../services/auth';
 import { githubApi } from '../services/githubService';
 
@@ -270,7 +269,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 					  process.env.GEMINI_API_KEY ||
 					  process.env.API_KEY
 					: '') ||
-                CREDENTIALS.gemini.apiKey;
+				'';
 
 			if (!apiKey) throw new Error('API key missing.');
 
