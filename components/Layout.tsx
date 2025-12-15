@@ -554,7 +554,9 @@ export const Layout: React.FC<LayoutProps> = ({
               {!isCollapsed && (
                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-base-text truncate">{user?.displayName || 'Usuário'}</p>
-                    <p className="text-[10px] text-base-muted truncate">{user?.email}</p>
+                    <p className="text-[10px] text-base-muted truncate">
+                        {user?.nickname ? `@${user.nickname}` : user?.email}
+                    </p>
                  </div>
               )}
               {!isCollapsed && (
