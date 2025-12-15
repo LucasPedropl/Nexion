@@ -62,6 +62,19 @@ export const githubApi = {
         return { content, sha: data.sha };
     },
 
+    // Get README content specifically
+    getReadme: async (token: string, owner: string, repo: string, branch?: string): Promise<string> => {
+        let url = `${BASE_URL}/repos/${owner}/${repo}/readme`;
+        if (branch) url += `?ref=${branch}`;
+
+        const res = await fetch(url, { headers: githubApi.getHeaders(token) });
+        if (!res.ok) return '';
+        
+        const data = await res.json();
+        // GitHub API returns content in base64
+        return new TextDecoder().decode(Uint8Array.from(atob(data.content), c => c.charCodeAt(0)));
+    },
+
     // Get branches
     getBranches: async (token: string, owner: string, repo: string): Promise<string[]> => {
         const res = await fetch(`${BASE_URL}/repos/${owner}/${repo}/branches`, { headers: githubApi.getHeaders(token) });
@@ -77,6 +90,36 @@ export const githubApi = {
         
         const res = await fetch(url, { headers: githubApi.getHeaders(token) });
         if (!res.ok) return [];
+        return await res.json();
+    },
+
+    // Get a specific Reference SHA (useful for branching)
+    getRef: async (token: string, owner: string, repo: string, ref: string): Promise<string> => {
+        // ref e.g., 'heads/main'
+        const url = `${BASE_URL}/repos/${owner}/${repo}/git/ref/${ref}`;
+        const res = await fetch(url, { headers: githubApi.getHeaders(token) });
+        if (!res.ok) throw new Error('Failed to fetch ref');
+        const data = await res.json();
+        return data.object.sha;
+    },
+
+    // Create a Branch
+    createBranch: async (token: string, owner: string, repo: string, newBranchName: string, baseSha: string) => {
+        const url = `${BASE_URL}/repos/${owner}/${repo}/git/refs`;
+        const body = {
+            ref: `refs/heads/${newBranchName}`,
+            sha: baseSha
+        };
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: githubApi.getHeaders(token),
+            body: JSON.stringify(body)
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to create branch');
+        }
         return await res.json();
     },
 

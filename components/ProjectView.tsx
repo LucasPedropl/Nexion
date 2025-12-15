@@ -7,7 +7,7 @@ import {
   Filter, Layers, UserCircle, ChevronDown, User, Target, LayoutGrid, SquareKanban,
   Paperclip, Image as ImageIcon, Maximize2, Activity, AlertCircle, Clock, Zap, ArrowRight, FileClock,
   Workflow, Play, AlertTriangle, Database, Network, GitGraph, Share2,
-  ZoomIn, ZoomOut, RotateCcw, Move, Copy, Code2
+  ZoomIn, ZoomOut, RotateCcw, Move, Copy, Code2, FolderGit2
 } from 'lucide-react';
 import { analyzeNotesToTasks, refineDocumentation, generateDiagramCode } from '../services/geminiService';
 import { ProjectIconDisplay } from './Layout';
@@ -836,7 +836,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           { id: 'notes', label: 'Anotações (IA)', icon: StickyNote },
           { id: 'docs', label: 'Documentação', icon: FileText },
           { id: 'diagrams', label: 'Diagramas', icon: Workflow },
-          ...(hasRepos ? [{ id: 'code', label: 'Código', icon: Code2 }] : [])
+          ...(hasRepos ? [{ id: 'code', label: 'Repositórios', icon: FolderGit2 }] : [])
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1811,7 +1811,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: CODE (New) */}
+        {/* TAB: REPOS (New) */}
         {activeTab === 'code' && (
             <RepositoryManager project={project} />
         )}
