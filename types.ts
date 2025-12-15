@@ -79,6 +79,7 @@ export interface Project {
   
   // Integrations
   githubRepos?: string[]; // URLs of connected repos
+  githubOrg?: string; // Nome da organização vinculada
 
   createdAt: number;
   order?: number; // Custom display order
@@ -98,7 +99,7 @@ export interface Notification {
 }
 
 export type ViewMode = 'dashboard' | 'project' | 'settings' | 'project-settings' | 'notifications';
-export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs' | 'diagrams' | 'code';
+export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs' | 'diagrams' | 'code' | 'deploy' | 'devtools';
 
 export type ThemeId = 
   | 'cosmic' 

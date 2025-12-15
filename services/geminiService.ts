@@ -1,7 +1,9 @@
+
 import { GoogleGenAI, Type } from '@google/genai';
 import { Task, DiagramType } from '../types';
+import { CREDENTIALS } from '../credentials';
 
-// Prefer Vite client env (VITE_) and never depend on a local credentials file
+// Prefer Vite client env (VITE_) and fall back to credentials file
 const geminiApiKey =
 	(typeof import.meta !== 'undefined' &&
 		(import.meta as any).env?.VITE_GEMINI_API_KEY) ||
@@ -12,7 +14,7 @@ const geminiApiKey =
 		  process.env.GEMINI_API_KEY ||
 		  process.env.API_KEY
 		: '') ||
-	'';
+    CREDENTIALS.gemini.apiKey;
 
 const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 

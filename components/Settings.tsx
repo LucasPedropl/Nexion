@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ThemeId, Theme } from '../types';
-import { Check, Palette, ShieldCheck, Database, ArrowLeft } from 'lucide-react';
+import { Check, Palette, ShieldCheck, Database, ArrowLeft, Github, Loader2, Link as LinkIcon } from 'lucide-react';
+import { auth, linkGithubAccount } from '../services/auth';
 
 interface SettingsProps {
   currentTheme: ThemeId;
@@ -34,6 +35,22 @@ const THEMES: Theme[] = [
 ];
 
 export const Settings: React.FC<SettingsProps> = ({ currentTheme, onThemeChange }) => {
+  const [isLinking, setIsLinking] = useState(false);
+  const user = auth.currentUser;
+
+  const handleLinkGithub = async () => {
+      setIsLinking(true);
+      try {
+          await linkGithubAccount();
+          alert("Conta do GitHub conectada com sucesso!");
+      } catch (error: any) {
+          console.error(error);
+          alert(error.message || "Erro ao conectar conta.");
+      } finally {
+          setIsLinking(false);
+      }
+  };
+
   return (
     <div className="flex flex-col bg-base-900 text-base-text min-h-full">
       {/* Sticky Header Standardized */}
@@ -44,8 +61,49 @@ export const Settings: React.FC<SettingsProps> = ({ currentTheme, onThemeChange 
       </div>
 
       <div className="flex-1 p-8 max-w-4xl mx-auto w-full">
-        {/* Seção de Temas */}
+        {/* Seção de Contas Conectadas */}
         <section className="mb-12 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="mb-6">
+                <h2 className="text-xl font-semibold text-base-text">Contas Conectadas</h2>
+                <p className="text-sm text-base-muted mt-1">Gerencie vínculos com serviços externos.</p>
+            </div>
+
+            <div className="bg-base-800 border border-base-700 rounded-xl p-6">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className={`p-3 rounded-lg ${user?.githubToken ? 'bg-[#24292e] text-white' : 'bg-base-900 text-base-muted'}`}>
+                            <Github size={24} />
+                        </div>
+                        <div>
+                            <h3 className="font-medium text-base-text">GitHub</h3>
+                            {user?.githubLogin ? (
+                                <p className="text-sm text-green-400 mt-1 flex items-center gap-1">
+                                    <Check size={12} /> Conectado como <strong>@{user.githubLogin}</strong>
+                                </p>
+                            ) : (
+                                <p className="text-sm text-base-muted mt-1">
+                                    Vincule sua conta para sincronizar repositórios e organizações.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {!user?.githubLogin && (
+                        <button 
+                            onClick={handleLinkGithub}
+                            disabled={isLinking}
+                            className="bg-base-900 hover:bg-base-700 border border-base-700 text-base-text px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                            {isLinking ? <Loader2 size={16} className="animate-spin" /> : <LinkIcon size={16} />}
+                            Conectar
+                        </button>
+                    )}
+                </div>
+            </div>
+        </section>
+
+        {/* Seção de Temas */}
+        <section className="mb-12 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-75">
           <div className="mb-6">
             <h2 className="text-xl font-semibold text-base-text">Aparência & Tema</h2>
             <p className="text-sm text-base-muted mt-1">Personalize a interface para se adequar ao seu estilo.</p>

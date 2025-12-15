@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { iconMap, ProjectIconDisplay } from './Layout';
 import { auth, findUserByEmail, searchUsersByNickname } from '../services/auth';
-import { sendInvite, saveProject } from '../services/firebase';
+import { sendInvite, saveProject, findUsersByGithubIds } from '../services/firebase';
+import { githubApi, GithubOrg, GithubMember } from '../services/githubService';
 
 interface ProjectSettingsProps {
   project: Project;
@@ -47,6 +48,13 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   const [foundUsers, setFoundUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+
+  // GitHub Organization Sync State
+  const [userOrgs, setUserOrgs] = useState<GithubOrg[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<string>(project.githubOrg || '');
+  const [orgMembers, setOrgMembers] = useState<any[]>([]); // Mixed Nexion Users & Github metadata
+  const [isLoadingOrg, setIsLoadingOrg] = useState(false);
+  const [isSyncingOrg, setIsSyncingOrg] = useState(false);
 
   // GitHub Repos State
   const [newRepoUrl, setNewRepoUrl] = useState('');
@@ -95,6 +103,13 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       return () => clearTimeout(timer);
   }, [searchNick, project.team, selectedUser]);
 
+  // Load User Orgs for Sync
+  useEffect(() => {
+      if (activeTab === 'team' && currentUser?.githubToken) {
+          githubApi.getUserOrgs(currentUser.githubToken).then(setUserOrgs).catch(console.error);
+      }
+  }, [activeTab, currentUser]);
+
   const showToast = (message: string, type: 'success' | 'error') => {
       setToast({ message, type, visible: true });
   };
@@ -119,7 +134,8 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       description: formData.description,
       icon: formData.icon,
       subsystems: formData.subsystems,
-      roles: formData.roles
+      roles: formData.roles,
+      githubOrg: selectedOrg
     });
     showToast("Projeto atualizado com sucesso!", 'success');
   };
@@ -184,52 +200,86 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   };
 
   // Team Logic
+  const executeInvite = async (userToInvite: any, role: ProjectRole) => {
+      try {
+        await sendInvite(
+            currentUser?.email || '', 
+            userToInvite.email, 
+            project.id, 
+            project.name, 
+            role,
+            userToInvite.nickname
+        );
+        
+        const newMember = { 
+            email: userToInvite.email, 
+            nickname: userToInvite.nickname,
+            role: role, 
+            status: 'pending', 
+            addedAt: Date.now() 
+        };
+        
+        const updatedTeam: any = [...teamMembers.filter(m => m.email !== userToInvite.email), newMember]; 
+        onUpdateProject({ ...project, team: updatedTeam });
+        showToast(`Convite enviado para @${userToInvite.nickname}.`, 'success');
+      } catch (error) {
+        showToast("Erro ao enviar convite.", 'error');
+      }
+  };
+
   const handleInvite = async () => {
     if (!selectedUser) {
         showToast("Selecione um usuário da lista para convidar.", 'error');
         return;
     }
-    
-    // Check if already active (redundant check, but safe)
     if (activeMembers.find(m => m.email === selectedUser.email)) {
         showToast("Este usuário já faz parte do projeto.", 'error');
         return;
     }
-
     setIsInviting(true);
-    try {
-        await sendInvite(
-            currentUser?.email || '', 
-            selectedUser.email, 
-            project.id, 
-            project.name, 
-            inviteRole,
-            selectedUser.nickname
-        );
-        
-        // Simulação otimista para UI
-        const newMember = { 
-            email: selectedUser.email, 
-            nickname: selectedUser.nickname,
-            role: inviteRole, 
-            status: 'pending', 
-            addedAt: Date.now() 
-        };
-        
-        // Remove se ja existia (ex-membro) e adiciona pending
-        const updatedTeam: any = [...teamMembers.filter(m => m.email !== selectedUser.email), newMember]; 
-        
-        onUpdateProject({ ...project, team: updatedTeam });
+    await executeInvite(selectedUser, inviteRole);
+    setSearchNick('');
+    setSelectedUser(null);
+    setFoundUsers([]);
+    setIsInviting(false);
+  };
 
-        showToast(`Convite enviado para @${selectedUser.nickname}.`, 'success');
-        setSearchNick('');
-        setSelectedUser(null);
-        setFoundUsers([]);
-    } catch (error) {
-        showToast("Erro ao enviar convite.", 'error');
-    } finally {
-        setIsInviting(false);
-    }
+  // --- Org Sync Logic ---
+  const handleSyncOrg = async () => {
+      if (!selectedOrg || !currentUser?.githubToken) return;
+      
+      setIsSyncingOrg(true);
+      try {
+          // 1. Get GitHub Members
+          const ghMembers = await githubApi.getOrgMembers(currentUser.githubToken, selectedOrg);
+          
+          // 2. Extract IDs
+          const ids = ghMembers.map(m => m.id);
+          
+          // 3. Find Nexion Users matching these IDs
+          const nexionUsers = await findUsersByGithubIds(ids);
+          
+          // 4. Map them together
+          const mappedMembers = nexionUsers.map(nxUser => {
+              const ghProfile = ghMembers.find(g => g.id === nxUser.githubId);
+              // Check if already in team
+              const existingTeamMember = teamMembers.find(m => m.email === nxUser.email && m.status === 'active');
+              
+              return {
+                  ...nxUser,
+                  ghAvatar: ghProfile?.avatar_url,
+                  ghUrl: ghProfile?.html_url,
+                  isAlreadyMember: !!existingTeamMember
+              };
+          });
+          
+          setOrgMembers(mappedMembers);
+          showToast(`Encontrados ${mappedMembers.length} membros no Nexion.`, 'success');
+      } catch (e: any) {
+          showToast(`Erro ao sincronizar: ${e.message}`, 'error');
+      } finally {
+          setIsSyncingOrg(false);
+      }
   };
 
   const updateMemberRole = (email: string, newRole: ProjectRole) => {
@@ -274,7 +324,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       }
 
       try {
-          // Busca UID real do usuário no banco
           const targetUser = await findUserByEmail(newOwnerEmail);
           
           if (!targetUser) {
@@ -282,14 +331,12 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
               return;
           }
 
-          // Atualiza lista de membros (garante que novo dono é admin)
           const updatedTeam = teamMembers.map(m => {
               if (m.email === newOwnerEmail) return { ...m, role: 'admin' as ProjectRole };
               if (m.email === currentUser?.email) return { ...m, role: 'admin' as ProjectRole };
               return m;
           });
 
-          // Atualiza projeto com novo ownerId
           onUpdateProject({
               ...project,
               ownerId: targetUser.uid,
@@ -313,8 +360,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       setIsLoadingGithub(true);
       setShowGithubList(true);
       try {
-          // Fetch user repos using visibility=all and affiliation parameters
-          // This ensures we get everything (private, orgs, etc) if the token allows it
           const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&visibility=all&affiliation=owner,collaborator,organization_member', {
               headers: {
                   Authorization: `Bearer ${currentUser.githubToken}`,
@@ -352,8 +397,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
   const handleAddRepo = () => {
       if (!newRepoUrl.trim()) return;
       let cleanUrl = newRepoUrl.trim();
-      
-      // Basic clean up: if user just pastes "owner/repo", prepend github.com
       if (!cleanUrl.startsWith('http') && !cleanUrl.includes('github.com')) {
           cleanUrl = `https://github.com/${cleanUrl}`;
       }
@@ -549,7 +592,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
             </div>
           )}
 
-          {/* ... OTHER TABS (Architecture, Team) ... */}
+          {/* ... OTHER TABS (Architecture) ... */}
           {/* TAB: ARCHITECTURE */}
           {activeTab === 'architecture' && (
              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -640,7 +683,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
              </div>
           )}
 
-          {/* TAB: REPOS (Enhanced with GitHub API & Filtering) */}
+          {/* TAB: REPOS (Keep existing) */}
           {activeTab === 'repos' && (
              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="mb-8">
@@ -827,8 +870,83 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                       <Users size={20} className="text-primary-500" />
                       Gerenciar Acesso
                   </h2>
-                  <p className="text-base-muted text-sm">Pesquise pelo Nickname do usuário para convidar.</p>
+                  <p className="text-base-muted text-sm">Convide membros ou sincronize com o GitHub.</p>
               </div>
+
+              {/* GitHub Organization Sync (NEW) */}
+              {isOwner && (
+                  <div className="bg-base-800 border border-base-700 rounded-xl p-6 shadow-sm">
+                      <div className="flex items-center gap-2 mb-4">
+                          <div className="p-2 bg-[#24292e] rounded-lg text-white">
+                              <Github size={18} />
+                          </div>
+                          <h3 className="font-medium text-base-text">Sincronizar com Organização GitHub</h3>
+                      </div>
+
+                      {!currentUser?.githubToken ? (
+                          <div className="text-sm text-base-muted bg-base-900/50 p-3 rounded-lg">
+                              Você precisa conectar sua conta do GitHub nas configurações globais para usar este recurso.
+                          </div>
+                      ) : (
+                          <div className="space-y-4">
+                              <div className="flex gap-2">
+                                  <select 
+                                      value={selectedOrg}
+                                      onChange={(e) => setSelectedOrg(e.target.value)}
+                                      className="flex-1 bg-base-900 border border-base-700 rounded-lg px-3 py-2 text-sm text-base-text focus:border-primary-500 outline-none"
+                                  >
+                                      <option value="">Selecione uma Organização...</option>
+                                      {userOrgs.map(org => (
+                                          <option key={org.id} value={org.login}>{org.login}</option>
+                                      ))}
+                                  </select>
+                                  <button 
+                                      onClick={handleSyncOrg}
+                                      disabled={!selectedOrg || isSyncingOrg}
+                                      className="bg-base-700 hover:bg-base-600 text-base-text px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                  >
+                                      {isSyncingOrg ? <Loader2 size={16} className="animate-spin" /> : "Buscar Membros"}
+                                  </button>
+                              </div>
+
+                              {orgMembers.length > 0 && (
+                                  <div className="border border-base-700 rounded-lg bg-base-900/50 overflow-hidden">
+                                      <div className="p-3 bg-base-900 border-b border-base-700 text-xs font-medium text-base-muted flex justify-between">
+                                          <span>Membros encontrados com conta Nexion</span>
+                                          <span>{orgMembers.length}</span>
+                                      </div>
+                                      <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                          {orgMembers.map(member => (
+                                              <div key={member.uid} className="flex items-center justify-between p-3 hover:bg-base-800 transition-colors border-b border-base-800/50 last:border-0">
+                                                  <div className="flex items-center gap-3">
+                                                      <img src={member.ghAvatar || member.photoURL} alt="" className="w-8 h-8 rounded-full bg-base-700" />
+                                                      <div>
+                                                          <p className="text-sm font-medium text-base-text">{member.displayName}</p>
+                                                          <p className="text-xs text-base-muted flex items-center gap-1">
+                                                              @{member.nickname} 
+                                                              <span className="opacity-50">• GitHub: {member.githubLogin}</span>
+                                                          </p>
+                                                      </div>
+                                                  </div>
+                                                  {member.isAlreadyMember ? (
+                                                      <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded">Já é membro</span>
+                                                  ) : (
+                                                      <button 
+                                                          onClick={() => executeInvite(member, 'editor')}
+                                                          className="text-xs bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                                                      >
+                                                          <Plus size={12} /> Convidar
+                                                      </button>
+                                                  )}
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </div>
+              )}
 
               {/* Invite Box (Redesigned for Nickname Search) */}
               <div className="bg-base-800 border border-base-700 rounded-xl p-6 shadow-sm relative">
@@ -931,7 +1049,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                         <p className="font-medium text-base-text flex items-center gap-2">
                                             {member.nickname ? `@${member.nickname}` : member.email}
                                         </p>
-                                        {/* "Você" Tag moved below name */}
                                         {isMe && <span className="text-[10px] bg-primary-500/20 text-primary-300 px-1.5 py-0.5 rounded border border-primary-500/30 inline-block mt-1">Você</span>}
                                         
                                         <div className="flex items-center gap-2 mt-1">
@@ -940,7 +1057,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                                     <Crown size={10} /> Dono do Projeto
                                                 </span>
                                             ) : (
-                                                /* If NOT me, show role badge here on the left side */
                                                 !isMe && (
                                                     <span className={`text-xs px-2 py-0.5 rounded border capitalize ${
                                                         member.role === 'admin' 
@@ -956,7 +1072,6 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
-                                    {/* Owner Control Actions */}
                                     {isOwner && !isMe && (
                                         <>
                                             <div className="relative">
@@ -991,10 +1106,8 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                         </>
                                     )}
                                     
-                                    {/* Non-Owner View / Self View */}
                                     {(!isOwner || isMe) && (
                                         <div className="text-xs text-base-muted px-2">
-                                            {/* If IS me and NOT owner, show badge here instead of text */}
                                             {isMe && !showOwnerBadge ? (
                                                 <span className={`text-xs px-2 py-0.5 rounded border capitalize ${
                                                     member.role === 'admin' 
@@ -1004,7 +1117,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                                     {member.role === 'admin' ? 'Administrador' : member.role === 'editor' ? 'Colaborador' : 'Leitor'}
                                                 </span>
                                             ) : (
-                                                !isOwner && "" // Empty string for others view if I am not owner
+                                                !isOwner && ""
                                             )}
                                         </div>
                                     )}
@@ -1041,7 +1154,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
                                   
                                   {isOwner && (
                                       <button 
-                                          onClick={() => removeMember(member.email, true)} // Hard delete removes from pending
+                                          onClick={() => removeMember(member.email, true)}
                                           className="text-xs text-base-muted hover:text-red-400 px-3 py-1.5 rounded-md transition-colors flex items-center gap-1 hover:bg-base-800 border border-transparent hover:border-base-700"
                                       >
                                           <X size={14} /> Cancelar

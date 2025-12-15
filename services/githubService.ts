@@ -28,6 +28,21 @@ export interface GithubCommit {
     html_url: string;
 }
 
+export interface GithubOrg {
+    login: string;
+    id: number;
+    url: string;
+    avatar_url: string;
+    description: string;
+}
+
+export interface GithubMember {
+    login: string;
+    id: number;
+    avatar_url: string;
+    html_url: string;
+}
+
 export const githubApi = {
     // Helper to get headers
     getHeaders: (token: string) => ({
@@ -160,6 +175,21 @@ export const githubApi = {
             throw new Error(err.message || 'Failed to commit changes');
         }
 
+        return await res.json();
+    },
+
+    // Get User Organizations
+    getUserOrgs: async (token: string): Promise<GithubOrg[]> => {
+        const res = await fetch(`${BASE_URL}/user/orgs`, { headers: githubApi.getHeaders(token) });
+        if (!res.ok) throw new Error('Failed to fetch organizations');
+        return await res.json();
+    },
+
+    // Get Organization Members
+    getOrgMembers: async (token: string, orgName: string): Promise<GithubMember[]> => {
+        // per_page=100 is max. For production we should paginate.
+        const res = await fetch(`${BASE_URL}/orgs/${orgName}/members?per_page=100`, { headers: githubApi.getHeaders(token) });
+        if (!res.ok) throw new Error('Failed to fetch org members. Check if you are an owner/member.');
         return await res.json();
     }
 };
