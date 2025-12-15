@@ -4,6 +4,8 @@ import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { Bot, Send, X, Minimize2, Terminal, Loader2 } from 'lucide-react';
 import { Project, Task, TaskStatus } from '../types';
 import { CREDENTIALS } from '../credentials';
+import { auth } from '../services/auth';
+import { githubApi } from '../services/githubService';
 
 interface AiAssistantProps {
 	project: Project;
@@ -25,7 +27,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 		{
 			role: 'model',
 			content:
-				'Olá! Sou seu assistente de projeto. Posso criar tarefas, escrever documentação, atualizar status ou mudar a descrição do projeto. Como posso ajudar?',
+				'Olá! Sou seu assistente de projeto. Posso gerenciar tarefas, docs e agora acessar seus REPOSITÓRIOS. Como posso ajudar?',
 		},
 	]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -110,25 +112,49 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 				required: ['title', 'content'],
 			},
 		},
-		{
-			name: 'update_project_description',
-			description: 'Atualiza a descrição geral ou o resumo do projeto.',
-			parameters: {
-				type: Type.OBJECT,
-				properties: {
-					newDescription: {
-						type: Type.STRING,
-						description: 'A nova descrição completa do projeto.',
-					},
-				},
-				required: ['newDescription'],
-			},
-		},
+        {
+            name: 'list_repo_files',
+            description: 'Lista arquivos de um repositório conectado.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL completa do repositório (ex: https://github.com/owner/repo) ou apenas o nome se houver ambiguidade.' },
+                    path: { type: Type.STRING, description: 'Caminho da pasta (opcional, padrão raiz).' }
+                },
+                required: ['repoUrl']
+            }
+        },
+        {
+            name: 'read_repo_file',
+            description: 'Lê o conteúdo de um arquivo no repositório.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL do repositório.' },
+                    filePath: { type: Type.STRING, description: 'Caminho completo do arquivo.' }
+                },
+                required: ['repoUrl', 'filePath']
+            }
+        },
+        {
+            name: 'commit_changes',
+            description: 'Cria um commit com alterações em um arquivo.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL do repositório.' },
+                    filePath: { type: Type.STRING, description: 'Caminho do arquivo.' },
+                    content: { type: Type.STRING, description: 'Novo conteúdo COMPLETO do arquivo.' },
+                    message: { type: Type.STRING, description: 'Mensagem do commit.' }
+                },
+                required: ['repoUrl', 'filePath', 'content', 'message']
+            }
+        }
 	];
 
 	// --- EXECUTORES DAS FERRAMENTAS ---
 
-	const executeFunction = (name: string, args: any): string => {
+	const executeFunction = async (name: string, args: any): Promise<string> => {
 		console.log(`[AI Exec] ${name}`, args);
 
 		if (name === 'create_task') {
@@ -142,26 +168,19 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 				createdAt: Date.now(),
 				attachments: [],
 			};
-
-			// Só adiciona scope se tiver valor
 			if (args.scope) newTask.scope = args.scope;
-
 			onUpdateProject({ ...project, tasks: [newTask, ...project.tasks] });
-			return `Tarefa criada com sucesso: ID ${newTask.id} - ${newTask.title}`;
+			return `Tarefa criada: ID ${newTask.id} - ${newTask.title}`;
 		}
 
 		if (name === 'update_task_status') {
 			const task = project.tasks.find((t) => t.id === args.taskId);
-			if (!task)
-				return `Erro: Tarefa com ID ${args.taskId} não encontrada.`;
-
+			if (!task) return `Erro: Tarefa ${args.taskId} não encontrada.`;
 			const updatedTasks = project.tasks.map((t) =>
-				t.id === args.taskId
-					? { ...t, status: args.newStatus as TaskStatus }
-					: t
+				t.id === args.taskId ? { ...t, status: args.newStatus as TaskStatus } : t
 			);
 			onUpdateProject({ ...project, tasks: updatedTasks });
-			return `Status da tarefa "${task.title}" atualizado para ${args.newStatus}.`;
+			return `Status atualizado para ${args.newStatus}.`;
 		}
 
 		if (name === 'create_documentation') {
@@ -173,13 +192,59 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 				lastUpdated: Date.now(),
 			};
 			onUpdateProject({ ...project, docs: [...project.docs, newDoc] });
-			return `Documento "${newDoc.title}" criado com sucesso.`;
+			return `Documento "${newDoc.title}" criado.`;
 		}
 
-		if (name === 'update_project_description') {
-			onUpdateProject({ ...project, description: args.newDescription });
-			return `Descrição do projeto atualizada com sucesso.`;
-		}
+        // --- GITHUB TOOLS ---
+        const user = auth.currentUser;
+        if (!user?.githubToken) return "Erro: Usuário não conectado ao GitHub.";
+
+        const getRepoDetails = (url: string) => {
+            // Tenta encontrar match na lista do projeto ou usa direto
+            const cleanUrl = url.includes('github.com') ? url : project.githubRepos?.find(r => r.includes(url)) || url;
+            const parts = cleanUrl.replace('https://github.com/', '').split('/');
+            if (parts.length < 2) throw new Error("Repositório inválido.");
+            return { owner: parts[0], repo: parts[1] };
+        };
+
+        if (name === 'list_repo_files') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                const files = await githubApi.getContents(user.githubToken, owner, repo, args.path || '');
+                return JSON.stringify(files.map(f => ({ name: f.name, type: f.type, path: f.path })));
+            } catch (e: any) {
+                return `Erro ao listar arquivos: ${e.message}`;
+            }
+        }
+
+        if (name === 'read_repo_file') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                const { content } = await githubApi.getFileContent(user.githubToken, owner, repo, args.filePath);
+                return `Conteúdo de ${args.filePath}:\n${content}`;
+            } catch (e: any) {
+                return `Erro ao ler arquivo: ${e.message}`;
+            }
+        }
+
+        if (name === 'commit_changes') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                // Precisa do SHA atual para update
+                let sha: string | undefined;
+                try {
+                    const current = await githubApi.getFileContent(user.githubToken, owner, repo, args.filePath);
+                    sha = current.sha;
+                } catch (e) {
+                    // Arquivo novo
+                }
+
+                await githubApi.updateFile(user.githubToken, owner, repo, args.filePath, args.content, args.message, sha);
+                return `Sucesso! Arquivo ${args.filePath} atualizado/criado.`;
+            } catch (e: any) {
+                return `Erro ao commitar: ${e.message}`;
+            }
+        }
 
 		return 'Função desconhecida.';
 	};
@@ -207,94 +272,50 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 					: '') ||
                 CREDENTIALS.gemini.apiKey;
 
-			if (!apiKey) {
-				throw new Error(
-					'API key is missing. Please provide a valid API key.'
-				);
-			}
+			if (!apiKey) throw new Error('API key missing.');
 
 			const ai = new GoogleGenAI({ apiKey });
 
-			// Preparar Contexto do Sistema com dados ATUAIS do projeto
+			// Preparar Contexto
 			const projectContext = `
-        PROJETO ATUAL: ${project.name}
-        DESCRIÇÃO ATUAL: ${project.description}
-        
-        TAREFAS EXISTENTES (Use esses IDs para updates):
-        ${project.tasks
-			.map(
-				(t) =>
-					`- [${t.status}] ${t.title} (ID: ${t.id}, Prio: ${t.priority})`
-			)
-			.join('\n')}
-        
-        DOCUMENTOS EXISTENTES:
-        ${project.docs.map((d) => `- ${d.title}`).join('\n')}
+                PROJETO: ${project.name}
+                REPOSITÓRIOS CONECTADOS: ${project.githubRepos?.join(', ') || 'Nenhum'}
+                TAREFAS: ${project.tasks.length}
+            `;
 
-        INSTRUÇÃO: Você é um assistente de PM e Tech Lead. Responda de forma concisa.
-        Sempre que o usuário pedir para mudar algo, chame a função apropriada.
-      `;
-
-			// Montar histórico simples para o prompt
 			const prompt = `
-        ${projectContext}
-        
-        Histórico recente:
-        ${messages
-			.slice(-4)
-			.map((m) => `${m.role}: ${m.content}`)
-			.join('\n')}
-        user: ${userMsg}
-      `;
+                ${projectContext}
+                Histórico:
+                ${messages.slice(-4).map((m) => `${m.role}: ${m.content}`).join('\n')}
+                user: ${userMsg}
+            `;
 
-			// Usando a nova API corretamente: ai.models.generateContent
 			const response = await ai.models.generateContent({
 				model: 'gemini-2.5-flash',
 				contents: prompt,
 				config: {
-					systemInstruction:
-						'Você é um assistente prestativo integrado ao app Nexion. Fale Português.',
+					systemInstruction: 'Você é um Tech Lead AI. Use as ferramentas para ler código e gerenciar o projeto.',
 					tools: [{ functionDeclarations: tools }],
 				},
 			});
 
-			// Verificar chamadas de função (acesso via propriedade, não método)
 			const functionCalls = response.functionCalls;
 
 			if (functionCalls && functionCalls.length > 0) {
 				let executionSummary = '';
-
 				for (const call of functionCalls) {
-					const fnName = call.name;
-					const fnArgs = call.args;
-					const output = executeFunction(fnName, fnArgs);
-					executionSummary += output + '\n';
+					const output = await executeFunction(call.name, call.args);
+					executionSummary += `[Exec ${call.name}]: ${output}\n`;
 				}
-
-				setMessages((prev) => [
-					...prev,
-					{ role: 'model', content: `Feito:\n${executionSummary}` },
-				]);
+				setMessages((prev) => [...prev, { role: 'model', content: executionSummary }]);
 			} else {
-				// Resposta de texto normal (acesso via propriedade)
-				const text = response.text;
-				setMessages((prev) => [
-					...prev,
-					{
-						role: 'model',
-						content: text || 'Não entendi, pode repetir?',
-					},
-				]);
+				setMessages((prev) => [...prev, { role: 'model', content: response.text || '...' }]);
 			}
 		} catch (error) {
 			console.error(error);
 			setMessages((prev) => [
 				...prev,
-				{
-					role: 'model',
-					content:
-						'Desculpe, tive um erro ao processar sua solicitação.',
-				},
+				{ role: 'model', content: 'Erro ao processar.' },
 			]);
 		} finally {
 			setIsLoading(false);
@@ -407,7 +428,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 								type="text"
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
-								placeholder="Crie uma tarefa, documente..."
+								placeholder="Gerar commit, ler arquivo..."
 								className="flex-1 bg-base-900 border border-base-700 rounded-xl px-4 py-3 text-sm text-base-text focus:outline-none focus:border-primary-500 transition-colors pr-10"
 							/>
 							<button
@@ -420,8 +441,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 						</form>
 						<div className="mt-2 flex gap-2 justify-center">
 							<span className="text-[10px] text-base-muted flex items-center gap-1 opacity-60">
-								<Terminal size={10} /> Powered by Gemini
-								Function Calling
+								<Terminal size={10} /> GitHub Tools Active
 							</span>
 						</div>
 					</div>

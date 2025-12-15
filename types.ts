@@ -98,7 +98,7 @@ export interface Notification {
 }
 
 export type ViewMode = 'dashboard' | 'project' | 'settings' | 'project-settings' | 'notifications';
-export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs' | 'diagrams';
+export type ProjectTab = 'overview' | 'tasks' | 'board' | 'notes' | 'docs' | 'diagrams' | 'code';
 
 export type ThemeId = 
   | 'cosmic' 

@@ -12,6 +12,7 @@ import {
 import { analyzeNotesToTasks, refineDocumentation, generateDiagramCode } from '../services/geminiService';
 import { ProjectIconDisplay } from './Layout';
 import { AiAssistant } from './AiAssistant';
+import { RepositoryManager } from './RepositoryManager';
 // @ts-ignore
 import mermaid from 'mermaid';
 
@@ -729,6 +730,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   const criticalBugs = currentTasks.filter(t => t.type === 'bug' && t.priority === 'high' && t.status !== 'done').length;
   const healthStatus = criticalBugs > 2 ? 'at-risk' : 'on-track';
 
+  const hasRepos = project.githubRepos && project.githubRepos.length > 0;
+
   return (
     <div className="flex flex-col bg-base-900 text-base-text min-h-full relative">
       {/* AI Assistant Component Added Here */}
@@ -833,6 +836,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           { id: 'notes', label: 'Anotações (IA)', icon: StickyNote },
           { id: 'docs', label: 'Documentação', icon: FileText },
           { id: 'diagrams', label: 'Diagramas', icon: Workflow },
+          ...(hasRepos ? [{ id: 'code', label: 'Código', icon: Code2 }] : [])
         ].map((tab) => (
           <button
             key={tab.id}
@@ -1082,7 +1086,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: TASKS (Mantido como estava) */}
+        {/* ... TASKS, BOARD, NOTES, DOCS, DIAGRAMS TABS (Keep existing content) ... */}
+        
+        {/* TAB: TASKS */}
         {activeTab === 'tasks' && (
           <div className="flex flex-col p-6 max-w-5xl mx-auto min-h-[calc(100vh-10rem)]">
             <div className="flex justify-between items-center mb-6">
@@ -1458,7 +1464,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: NOTES */}
+        {/* TAB: NOTES (Keep existing content) */}
         {activeTab === 'notes' && (
           <div className="flex flex-col p-6 h-[calc(100vh-10rem)]">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 flex-shrink-0">
@@ -1548,7 +1554,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: DOCS */}
+        {/* TAB: DOCS (Keep existing content) */}
         {activeTab === 'docs' && (
           <div className="flex items-start min-h-[calc(100vh-10rem)]">
             {/* Sidebar de Documentos */}
@@ -1666,7 +1672,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: DIAGRAMS (New) */}
+        {/* TAB: DIAGRAMS (Keep existing content) */}
         {activeTab === 'diagrams' && (
           <div className="flex items-start min-h-[calc(100vh-10rem)]">
             {/* Sidebar Diagramas */}
@@ -1803,6 +1809,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
               )}
             </div>
           </div>
+        )}
+
+        {/* TAB: CODE (New) */}
+        {activeTab === 'code' && (
+            <RepositoryManager project={project} />
         )}
       </div>
 

@@ -313,8 +313,9 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
       setIsLoadingGithub(true);
       setShowGithubList(true);
       try {
-          // Fetch user repos with type=all to include private/org repos
-          const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&type=all', {
+          // Fetch user repos using visibility=all and affiliation parameters
+          // This ensures we get everything (private, orgs, etc) if the token allows it
+          const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated&visibility=all&affiliation=owner,collaborator,organization_member', {
               headers: {
                   Authorization: `Bearer ${currentUser.githubToken}`,
                   Accept: 'application/vnd.github.v3+json'
@@ -548,6 +549,7 @@ export const ProjectSettings: React.FC<ProjectSettingsProps> = ({
             </div>
           )}
 
+          {/* ... OTHER TABS (Architecture, Team) ... */}
           {/* TAB: ARCHITECTURE */}
           {activeTab === 'architecture' && (
              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
