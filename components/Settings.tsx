@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { ThemeId, Theme } from '../types';
-import { Check, Palette, ShieldCheck, Database } from 'lucide-react';
+import { Check, Palette, ShieldCheck, Database, ArrowLeft } from 'lucide-react';
 
 interface SettingsProps {
   currentTheme: ThemeId;
@@ -35,18 +35,21 @@ const THEMES: Theme[] = [
 
 export const Settings: React.FC<SettingsProps> = ({ currentTheme, onThemeChange }) => {
   return (
-    <div className="flex-1 p-8 bg-base-900 text-base-text min-h-full">
-      <div className="max-w-4xl mx-auto">
-        <header className="mb-10 border-b border-base-700 pb-6">
-          <h1 className="text-3xl font-bold text-base-text mb-2 flex items-center gap-3">
-            <Palette className="text-primary-500" /> Configurações
+    <div className="flex flex-col bg-base-900 text-base-text min-h-full">
+      {/* Sticky Header Standardized */}
+      <div className="h-16 border-b border-base-800 flex items-center px-6 bg-base-950 sticky top-0 z-30 flex-shrink-0">
+          <h1 className="text-xl font-bold text-base-text flex items-center gap-3">
+            <Palette className="text-primary-500" size={20} /> Configurações
           </h1>
-          <p className="text-base-muted">Personalize a aparência e veja o status do sistema.</p>
-        </header>
+      </div>
 
+      <div className="flex-1 p-8 max-w-4xl mx-auto w-full">
         {/* Seção de Temas */}
-        <section className="mb-12">
-          <h2 className="text-xl font-semibold text-base-text mb-6">Aparência & Tema</h2>
+        <section className="mb-12 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-base-text">Aparência & Tema</h2>
+            <p className="text-sm text-base-muted mt-1">Personalize a interface para se adequar ao seu estilo.</p>
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {THEMES.map((theme) => (
@@ -92,8 +95,12 @@ export const Settings: React.FC<SettingsProps> = ({ currentTheme, onThemeChange 
         </section>
 
         {/* Status do Sistema */}
-        <section>
-          <h2 className="text-xl font-semibold text-base-text mb-6">Status do Sistema</h2>
+        <section className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-100">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold text-base-text">Status do Sistema</h2>
+            <p className="text-sm text-base-muted mt-1">Informações sobre conexões externas.</p>
+          </div>
+
           <div className="bg-base-800 rounded-xl p-6 border border-base-700">
              <div className="flex items-start gap-4 mb-6">
                 <div className="p-3 bg-green-900/30 text-green-400 rounded-lg">

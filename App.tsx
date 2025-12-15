@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Project, ViewMode, ThemeId } from './types';
 import {
@@ -6,18 +7,31 @@ import {
 	deleteProject,
 	createInitialProject,
 } from './services/firebase';
+import { subscribeToAuth, NexionUser, createUserProfile } from './services/auth';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { ProjectView } from './components/ProjectView';
 import { Settings } from './components/Settings';
 import { ProjectSettings } from './components/ProjectSettings';
-import { X, AlertTriangle, Edit2 } from 'lucide-react';
+import { NotificationsPage } from './components/NotificationsPage';
+import { AuthPage } from './components/AuthPage';
+import { X, AlertTriangle, Edit2, AtSign, Loader2, ArrowRight } from 'lucide-react';
 
 const App: React.FC = () => {
+    // Auth State
+    const [user, setUser] = useState<NexionUser | null>(null);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+    // App Data State
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 	const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
-	const [isLoading, setIsLoading] = useState(true);
+	const [isDataLoading, setIsDataLoading] = useState(false);
+
+    // Nickname Setup State (For social login first time)
+    const [nickname, setNickname] = useState('');
+    const [isSavingNick, setIsSavingNick] = useState(false);
+    const [nickError, setNickError] = useState<string | null>(null);
 
 	// Modal States
 	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -50,20 +64,62 @@ const App: React.FC = () => {
 		document.documentElement.setAttribute('data-theme', currentTheme);
 	}, [currentTheme]);
 
-	// Load projects on mount
+    // Monitor Auth State
+    useEffect(() => {
+        const unsubscribe = subscribeToAuth((currentUser) => {
+            setUser(currentUser);
+            setIsAuthLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const loadProjects = async () => {
+        if (!user || !user.nickname) {
+            setProjects([]);
+            return;
+        }
+        setIsDataLoading(true);
+        try {
+            const data = await getProjects(user as any); // Cast para User do Firebase
+            setProjects(data);
+        } catch (error) {
+            console.error('Falha ao carregar projetos', error);
+        } finally {
+            setIsDataLoading(false);
+        }
+    };
+
+	// Load projects when user changes and HAS NICKNAME
 	useEffect(() => {
-		const load = async () => {
-			try {
-				const data = await getProjects();
-				setProjects(data);
-			} catch (error) {
-				console.error('Falha ao carregar projetos', error);
-			} finally {
-				setIsLoading(false);
-			}
-		};
-		load();
-	}, []);
+		if (!isAuthLoading && user?.nickname) {
+            loadProjects();
+        }
+	}, [user, isAuthLoading]);
+
+    // Handler para Salvar Nickname (Social Login First Time)
+    const handleSaveNickname = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user || !nickname.trim()) return;
+        
+        setIsSavingNick(true);
+        setNickError(null);
+
+        try {
+            if (nickname.includes(' ')) throw new Error("Apelido não pode ter espaços.");
+            
+            await createUserProfile(user.uid!, {
+                email: user.email!,
+                displayName: user.displayName || 'User',
+                nickname: nickname,
+                photoURL: user.photoURL || ''
+            });
+            // O subscribeToAuth deve atualizar o user state automaticamente via listener
+        } catch (err: any) {
+            setNickError(err.message || "Erro ao salvar apelido.");
+        } finally {
+            setIsSavingNick(false);
+        }
+    };
 
 	const handleOpenCreateModal = () => {
 		setNewProjectName('');
@@ -71,14 +127,10 @@ const App: React.FC = () => {
 	};
 
 	const handleConfirmCreateProject = async () => {
-		if (!newProjectName.trim()) return;
+		if (!newProjectName.trim() || !user) return;
 
-		const newProject = createInitialProject();
-		newProject.name = newProjectName; // Use the custom name
-		// Place new project at the top (order 0), shift others if needed,
-		// but simple append logic with order 0 relies on sort logic.
-		// Better to find min order and subtract 1, or just let user reorder.
-		// For now, let's just add it.
+		const newProject = createInitialProject(user as any);
+		newProject.name = newProjectName; 
 
 		await saveProject(newProject);
 		setProjects((prev) => [newProject, ...prev]);
@@ -96,8 +148,6 @@ const App: React.FC = () => {
 	};
 
 	const handleReorderProjects = async (reorderedProjects: Project[]) => {
-		// 1. Update local state immediately (Optimistic)
-		// We need to ensure each project has the correct 'order' value based on its new index
 		const updatedProjects = reorderedProjects.map((p, index) => ({
 			...p,
 			order: index,
@@ -105,15 +155,36 @@ const App: React.FC = () => {
 
 		setProjects(updatedProjects);
 
-		// 2. Persist changes to DB
-		// In a real app, use a batch write. Here we map saveProject.
 		try {
 			await Promise.all(updatedProjects.map((p) => saveProject(p)));
 		} catch (error) {
 			console.error('Failed to save project order', error);
-			// Optional: revert state on error
 		}
 	};
+
+    const handleLeaveProject = async (projectToLeave: Project) => {
+        if (!user) return;
+        
+        // Remove user from team and members
+        const updatedTeam = projectToLeave.team.filter(m => m.email !== user.email);
+        const updatedMembers = projectToLeave.members.filter(e => e !== user.email);
+        
+        const updatedProject = {
+            ...projectToLeave,
+            team: updatedTeam,
+            members: updatedMembers
+        };
+
+        await saveProject(updatedProject);
+        
+        // Update local state
+        setProjects(prev => prev.filter(p => p.id !== projectToLeave.id));
+        
+        if (activeProjectId === projectToLeave.id) {
+            setActiveProjectId(null);
+            setCurrentView('dashboard');
+        }
+    };
 
 	const handleRequestDelete = (id: string) => {
 		setProjectToDeleteId(id);
@@ -150,6 +221,11 @@ const App: React.FC = () => {
 		setCurrentView('settings');
 	};
 
+    const handleOpenNotifications = () => {
+        setActiveProjectId(null);
+        setCurrentView('notifications');
+    };
+
 	const handleOpenProjectSettings = (projectId: string) => {
 		setActiveProjectId(projectId);
 		setCurrentView('project-settings');
@@ -168,29 +244,94 @@ const App: React.FC = () => {
 		}
 	};
 
-	if (isLoading) {
+    // --- RENDER ---
+
+	if (isAuthLoading) {
 		return (
 			<div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-indigo-500">
-				<svg
-					className="animate-spin h-10 w-10"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-				>
-					<circle
-						className="opacity-25"
-						cx="12"
-						cy="12"
-						r="10"
-						stroke="currentColor"
-						strokeWidth="4"
-					></circle>
-					<path
-						className="opacity-75"
-						fill="currentColor"
-						d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-					></path>
+				<svg className="animate-spin h-10 w-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+					<circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+					<path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 				</svg>
+			</div>
+		);
+	}
+
+    if (!user) {
+        return <AuthPage />;
+    }
+
+    // --- NICKNAME SETUP SCREEN ---
+    // Exibido se o usuário está logado mas não tem nickname (provavelmente login social novo)
+    if (!user.nickname) {
+        return (
+            <div className="h-screen w-screen bg-base-950 flex items-center justify-center p-4">
+                <div className="w-full max-w-md bg-base-900 border border-base-800 rounded-2xl p-8 shadow-2xl animate-in fade-in zoom-in-95">
+                    <div className="text-center mb-6">
+                        <div className="w-12 h-12 bg-amber-500 rounded-xl mx-auto flex items-center justify-center text-white mb-4">
+                            <AtSign size={24} />
+                        </div>
+                        <h2 className="text-xl font-bold text-white">Quase lá!</h2>
+                        <p className="text-base-muted mt-2">
+                            Para colaborar em projetos, você precisa definir um apelido único.
+                        </p>
+                    </div>
+
+                    {nickError && (
+                        <div className="mb-4 p-3 bg-red-900/20 border border-red-900/50 rounded-lg flex items-center gap-2 text-red-400 text-sm">
+                            <AlertTriangle size={16} />
+                            {nickError}
+                        </div>
+                    )}
+
+                    <form onSubmit={handleSaveNickname} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-base-muted uppercase mb-1.5 ml-1">
+                                Escolha seu Nickname
+                            </label>
+                            <div className="relative">
+                                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 text-base-muted" size={18} />
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    placeholder="ex: dev_master"
+                                    value={nickname}
+                                    onChange={(e) => setNickname(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                                    className="w-full bg-base-950 border border-base-700 text-white pl-10 pr-4 py-3 rounded-xl focus:border-primary-500 focus:outline-none transition-colors placeholder-base-700"
+                                    required
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            type="submit" 
+                            disabled={isSavingNick || !nickname.trim()}
+                            className="w-full bg-primary-600 hover:bg-primary-500 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-primary-900/20 flex items-center justify-center gap-2"
+                        >
+                            {isSavingNick ? <Loader2 className="animate-spin" size={20} /> : (
+                                <>
+                                    Finalizar Cadastro
+                                    <ArrowRight size={18} />
+                                </>
+                            )}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    // Loading de dados interno (após login e nickname ok)
+	if (isDataLoading && projects.length === 0) {
+		return (
+			<div className="h-screen w-screen bg-base-900 flex items-center justify-center text-primary-500">
+                <div className="flex flex-col items-center gap-4">
+				    <svg className="animate-spin h-10 w-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+					    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+					    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+				    </svg>
+                    <p className="text-base-muted animate-pulse">Sincronizando projetos...</p>
+                </div>
 			</div>
 		);
 	}
@@ -206,9 +347,11 @@ const App: React.FC = () => {
 				onSelectProject={handleSelectProject}
 				onAddProject={handleOpenCreateModal}
 				onOpenSettings={handleOpenSettings}
+                onOpenNotifications={handleOpenNotifications}
 				onOpenProjectSettings={handleOpenProjectSettings}
 				onRequestRename={handleOpenRenameModal}
 				onRequestDeleteProject={handleRequestDelete}
+                onRequestLeaveProject={handleLeaveProject} 
 				onReorderProjects={handleReorderProjects}
 			>
 				{currentView === 'settings' ? (
@@ -216,11 +359,14 @@ const App: React.FC = () => {
 						currentTheme={currentTheme}
 						onThemeChange={setCurrentTheme}
 					/>
-				) : currentView === 'project-settings' && activeProject ? (
+				) : currentView === 'notifications' ? (
+                    <NotificationsPage onInviteAccepted={loadProjects} />
+                ) : currentView === 'project-settings' && activeProject ? (
 					<ProjectSettings
 						project={activeProject}
 						onUpdateProject={handleUpdateProject}
 						onDeleteProject={handleRequestDelete}
+                        onLeaveProject={() => handleLeaveProject(activeProject)}
 						onBack={() => handleSelectProject(activeProject.id)}
 					/>
 				) : currentView === 'project' && activeProject ? (

@@ -1,7 +1,9 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { Bot, Send, X, Minimize2, Terminal, Loader2 } from 'lucide-react';
 import { Project, Task, TaskStatus } from '../types';
+import { CREDENTIALS } from '../credentials';
 
 interface AiAssistantProps {
 	project: Project;
@@ -201,9 +203,9 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 				(typeof process !== 'undefined'
 					? process.env.VITE_GEMINI_API_KEY ||
 					  process.env.GEMINI_API_KEY ||
-					  process.env.API_KEY ||
-					  ''
-					: '');
+					  process.env.API_KEY
+					: '') ||
+                CREDENTIALS.gemini.apiKey;
 
 			if (!apiKey) {
 				throw new Error(
