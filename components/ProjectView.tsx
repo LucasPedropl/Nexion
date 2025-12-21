@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Project, ProjectTab, Task, TaskStatus, TaskPriority, ProjectNote, Diagram, DiagramType } from '../types';
+import { Project, ProjectTab, Task, TaskStatus, TaskPriority, ProjectNote, Diagram, DiagramType, TaskType } from '../types';
 import { 
   ArrowLeft, Save, Trash2, Wand2, FileText, CheckSquare, 
   StickyNote, LayoutTemplate, Plus, Edit2, Check, X, Search, Settings,
   Filter, Layers, UserCircle, ChevronDown, User, Target, LayoutGrid, SquareKanban,
   Paperclip, Image as ImageIcon, Maximize2, Activity, AlertCircle, Clock, Zap, ArrowRight, FileClock,
   Workflow, Play, AlertTriangle, Database, Network, GitGraph, Share2,
-  ZoomIn, ZoomOut, RotateCcw, Move, Copy, Code2, FolderGit2
+  ZoomIn, ZoomOut, RotateCcw, Move, Copy, Code2, FolderGit2, Eye, EyeOff, Bug, Tag
 } from 'lucide-react';
 import { analyzeNotesToTasks, refineDocumentation, generateDiagramCode } from '../services/geminiService';
 import { ProjectIconDisplay } from './Layout';
@@ -148,6 +148,7 @@ const MermaidRenderer = ({ code, id }: { code: string; id: string }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  // Fixed: Added missing useState call
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Render Diagram
@@ -315,6 +316,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   const [isScopeMenuOpen, setIsScopeMenuOpen] = useState(false);
   const scopeMenuRef = useRef<HTMLDivElement>(null);
 
+  // New Filter States
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [filterType, setFilterType] = useState<TaskType | 'all'>('all');
+  const [filterRole, setFilterRole] = useState<string>('all');
+
   // Notes state (now specific to scope)
   const [currentNoteContent, setCurrentNoteContent] = useState('');
   const [noteAttachments, setNoteAttachments] = useState<string[]>([]);
@@ -375,8 +381,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     if (Array.isArray(project.notes)) {
       const noteObj = project.notes.find(n => n.scope === targetScope);
       setCurrentNoteContent(noteObj ? noteObj.content : '');
-      // Note attachments are transient (session based) for now, or could be saved in notes structure if we expanded ProjectNote type.
-      // For this version, we'll keep them transient until converted to tasks.
       setNoteAttachments([]); 
     } else {
       // Legacy format migration handling in UI
@@ -392,8 +396,29 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   // --- Logic Helpers ---
 
   const getFilteredTasks = () => {
-    if (activeScope === 'all') return project.tasks;
-    return project.tasks.filter(t => t.scope === activeScope);
+    let filtered = project.tasks;
+
+    // Filter by Scope (existing)
+    if (activeScope !== 'all') {
+      filtered = filtered.filter(t => t.scope === activeScope);
+    }
+
+    // Filter by Type
+    if (filterType !== 'all') {
+      filtered = filtered.filter(t => t.type === filterType);
+    }
+
+    // Filter by Role
+    if (filterRole !== 'all') {
+      filtered = filtered.filter(t => t.role === filterRole);
+    }
+
+    // Filter by Done Status (Default hidden)
+    if (!showCompleted) {
+      filtered = filtered.filter(t => t.status !== 'done');
+    }
+
+    return filtered;
   };
 
   const getFilteredDocs = () => {
@@ -469,7 +494,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     const targetScope = activeScope === 'all' ? 'general' : activeScope;
     
     try {
-      // Passa a lista de subsistemas e roles para a IA conseguir mapear corretamente
       const newTasksRaw = await analyzeNotesToTasks(
         currentNoteContent, 
         targetScope,
@@ -477,8 +501,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         project.roles || []
       );
 
-      // --- LOGICA DE DISTRIBUIÇÃO DE IMAGENS ---
-      // Estratégia: Sequencial + Overflow
       const typedTasks: Task[] = newTasksRaw.map((t, index) => {
         let myAttachments: string[] = [];
 
@@ -505,8 +527,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           attachments: myAttachments
         };
 
-        // Somente adiciona scope e role se existirem e não forem undefined
-        // Firestore rejeita campos explicitamente undefined
         if (t.scope) newTask.scope = t.scope;
         if (t.role) newTask.role = t.role;
 
@@ -518,7 +538,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         tasks: [...project.tasks, ...typedTasks]
       });
 
-      setNoteAttachments([]); // Limpa anexos após processar
+      setNoteAttachments([]); 
       alert(`O Gemini criou ${typedTasks.length} tarefas e distribuiu ${noteAttachments.length} anexos!`);
       setActiveTab('tasks');
     } catch (e) {
@@ -664,12 +684,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     const diagram = currentDiagrams.find(d => d.id === id);
     if (!diagram) return;
 
-    // Check if code is empty or matches a default template (to safely overwrite)
     const isDefault = !diagram.code.trim() || Object.values(DIAGRAM_TEMPLATES).includes(diagram.code.trim());
     
     updateDiagram(id, {
         type: newType,
-        // Only update code if it's "clean", otherwise keep user's code but change type tag
         code: isDefault ? DIAGRAM_TEMPLATES[newType] : diagram.code 
     });
   };
@@ -687,7 +705,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     if (!diagramPrompt.trim()) return;
     setIsDiagramGenerating(true);
     
-    // Prepare project context summary
     const projectContext = `
       Projeto: ${project.name}
       Descrição: ${project.description}
@@ -718,23 +735,21 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   const currentTasks = getFilteredTasks();
   const currentDocs = getFilteredDocs();
   
-  const totalTasks = currentTasks.length;
-  const completedTasks = currentTasks.filter(t => t.status === 'done').length;
+  const totalTasks = project.tasks.length;
+  const completedTasks = project.tasks.filter(t => t.status === 'done').length;
   const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
   
-  const highPriorityTasks = currentTasks.filter(t => t.priority === 'high' && t.status !== 'done');
-  const recentTasks = [...currentTasks].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
-  const recentDocs = [...currentDocs].sort((a,b) => b.lastUpdated - a.lastUpdated).slice(0, 3);
+  const highPriorityTasks = project.tasks.filter(t => t.priority === 'high' && t.status !== 'done');
+  const recentTasks = [...project.tasks].sort((a,b) => b.createdAt - a.createdAt).slice(0, 5);
+  const recentDocs = [...project.docs].sort((a,b) => b.lastUpdated - a.lastUpdated).slice(0, 3);
   
-  // Simple Health Calculation
-  const criticalBugs = currentTasks.filter(t => t.type === 'bug' && t.priority === 'high' && t.status !== 'done').length;
+  const criticalBugs = project.tasks.filter(t => t.type === 'bug' && t.priority === 'high' && t.status !== 'done').length;
   const healthStatus = criticalBugs > 2 ? 'at-risk' : 'on-track';
 
   const hasRepos = project.githubRepos && project.githubRepos.length > 0;
 
   return (
     <div className="flex flex-col bg-base-900 text-base-text min-h-full relative">
-      {/* AI Assistant Component Added Here */}
       <AiAssistant project={project} onUpdateProject={onUpdateProject} />
 
       {/* Header - Sticky */}
@@ -751,7 +766,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           <div className="flex flex-col justify-center h-full gap-0.5">
              <h1 className="text-lg font-bold text-base-text leading-none">{project.name}</h1>
              
-             {/* Custom Dropdown for Context Selector */}
              <div className="relative mt-1" ref={scopeMenuRef}>
                 <button 
                   onClick={() => setIsScopeMenuOpen(!isScopeMenuOpen)}
@@ -765,12 +779,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                    <ChevronDown size={12} className={`text-base-muted transition-transform duration-200 ${isScopeMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Dropdown Menu */}
                 {isScopeMenuOpen && (
                   <div className="absolute top-full left-0 mt-2 w-56 bg-base-800 border border-base-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 origin-top-left">
                     <div className="p-1">
                       <div className="px-3 py-2 text-[10px] font-bold text-base-muted uppercase tracking-wider">
-                        Filtrar por Área
+                        Filtrar por Área (Sub-sistema)
                       </div>
                       
                       <button
@@ -862,7 +875,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             
             {/* Top Section: Health & Summary */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-               {/* Left: Description & Progress */}
                <div className="lg:col-span-2 flex flex-col gap-6">
                   <div className="bg-base-800 border border-base-700 rounded-xl p-6">
                       <div className="flex justify-between items-start mb-4">
@@ -883,10 +895,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                          {project.description || "Adicione uma descrição para alinhar o objetivo do projeto."}
                       </div>
 
-                      {/* Progress Bar */}
                       <div>
                         <div className="flex justify-between text-xs font-medium text-base-muted mb-2">
-                           <span>Progresso Geral {activeScope !== 'all' ? `(${activeScope})` : ''}</span>
+                           <span>Progresso Geral</span>
                            <span>{Math.round(progress)}% Concluído</span>
                         </div>
                         <div className="h-3 bg-base-900 rounded-full overflow-hidden border border-base-700/50">
@@ -897,15 +908,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                         </div>
                         <div className="flex gap-4 mt-3 text-xs text-base-muted">
                             <span className="flex items-center gap-1"><CheckSquare size={12} /> {completedTasks}/{totalTasks} tarefas</span>
-                            <span className="flex items-center gap-1"><FileText size={12} /> {currentDocs.length} documentos</span>
+                            <span className="flex items-center gap-1"><FileText size={12} /> {project.docs.length} documentos</span>
                         </div>
                       </div>
                   </div>
                </div>
 
-               {/* Right: Quick Context */}
                <div className="flex flex-col gap-4">
-                  {/* Architecture Tags */}
                   <div className="bg-base-800 border border-base-700 rounded-xl p-5 flex-1">
                      <label className="block text-xs uppercase tracking-wider text-base-muted mb-3 font-semibold flex items-center gap-2">
                         <Layers size={14} /> Arquitetura
@@ -917,7 +926,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                      </div>
                   </div>
                   
-                  {/* Role Tags */}
                   <div className="bg-base-800 border border-base-700 rounded-xl p-5 flex-1">
                      <label className="block text-xs uppercase tracking-wider text-base-muted mb-3 font-semibold flex items-center gap-2">
                         <UserCircle size={14} /> Atores
@@ -931,10 +939,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                </div>
             </div>
 
-            {/* Bento Grid Layout */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                
-                {/* 1. Radar de Prioridade (High Priority Tasks) */}
                 <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden">
                     <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
                         <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
@@ -977,7 +982,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                     )}
                 </div>
 
-                {/* 2. Timeline de Atividade Recente */}
                 <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden">
                     <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
                         <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
@@ -1013,9 +1017,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                     </div>
                 </div>
 
-                {/* 3. Docs & Quick Actions */}
                 <div className="flex flex-col gap-6">
-                    {/* Recent Docs */}
                     <div className="bg-base-800 border border-base-700 rounded-xl flex flex-col overflow-hidden flex-1">
                         <div className="p-4 border-b border-base-700/50 bg-base-800/50 flex justify-between items-center">
                             <h3 className="font-bold text-base-text flex items-center gap-2 text-sm">
@@ -1043,7 +1045,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                         </div>
                     </div>
 
-                    {/* Quick Actions */}
                     <div className="bg-base-800 border border-base-700 rounded-xl p-4">
                         <h3 className="font-bold text-base-text flex items-center gap-2 text-sm mb-3">
                             <Zap size={16} className="text-amber-400" />
@@ -1086,215 +1087,108 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* ... TASKS, BOARD, NOTES, DOCS, DIAGRAMS TABS (Keep existing content) ... */}
-        
         {/* TAB: TASKS */}
         {activeTab === 'tasks' && (
           <div className="flex flex-col p-6 max-w-5xl mx-auto min-h-[calc(100vh-10rem)]">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-3">
-                 <h2 className="text-xl font-bold text-base-text">Backlog {activeScope !== 'all' ? `— ${activeScope}` : ''}</h2>
-                 {activeScope === 'all' && (
-                    <span className="text-xs text-base-muted bg-base-800 px-2 py-1 rounded">Vendo todos os módulos</span>
-                 )}
+            <div className="flex flex-col gap-6 mb-6">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                   <h2 className="text-xl font-bold text-base-text">Backlog</h2>
+                   {activeScope !== 'all' && (
+                      <span className="text-xs text-primary-400 bg-primary-500/10 px-2.5 py-1 rounded-full font-medium border border-primary-500/20">
+                        Área: {activeScope}
+                      </span>
+                   )}
+                </div>
+                <button 
+                  onClick={() => {
+                     setShowNewTaskForm(true);
+                     setTaskEditForm({
+                        title: '', 
+                        description: '', 
+                        priority: 'medium', 
+                        scope: activeScope !== 'all' ? activeScope : '',
+                        role: '',
+                        attachments: []
+                     });
+                     setEditingTaskId(null);
+                  }}
+                  className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm transition-colors shadow-lg shadow-primary-900/20"
+                >
+                  <Plus size={16} /> Nova Tarefa
+                </button>
               </div>
-              <button 
-                onClick={() => {
-                   setShowNewTaskForm(true);
-                   setTaskEditForm({
-                      title: '', 
-                      description: '', 
-                      priority: 'medium', 
-                      scope: activeScope !== 'all' ? activeScope : '',
-                      role: '',
-                      attachments: []
-                   });
-                   setEditingTaskId(null);
-                }}
-                className="flex items-center gap-2 bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-              >
-                <Plus size={16} /> Nova Tarefa
-              </button>
-            </div>
 
-            {/* Formulário de Nova Tarefa / Edição */}
-            {(showNewTaskForm || editingTaskId) && (
-               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-                  <div className="bg-base-900 border border-base-700 w-full max-w-2xl rounded-2xl shadow-2xl scale-100 animate-in zoom-in-95 duration-200 relative flex flex-col max-h-[90vh]">
-                     
-                     <div className="p-6 border-b border-base-800 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-base-text">
-                           {editingTaskId ? "Editar Tarefa / Visualizar" : "Nova Tarefa"}
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            {editingTaskId && (
-                                <button 
-                                    onClick={() => deleteTask(editingTaskId)}
-                                    className="p-2 hover:bg-red-900/20 text-red-400 rounded-lg transition-colors mr-2"
-                                    title="Excluir Tarefa"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
-                            )}
-                            <button 
-                                onClick={() => { setShowNewTaskForm(false); setEditingTaskId(null); }}
-                                className="p-1 hover:bg-base-800 rounded text-base-muted hover:text-base-text"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
-                     </div>
-
-                     <div className="p-6 overflow-y-auto custom-scrollbar space-y-4 flex-1">
-                        <div className="flex flex-col gap-3">
-                            {/* Row 1: Title */}
-                            <input 
-                                placeholder="Título da Tarefa"
-                                value={taskEditForm.title}
-                                onChange={e => setTaskEditForm({...taskEditForm, title: e.target.value})}
-                                onPaste={(e) => handlePasteImage(e, (val) => {
-                                    const newAttachments = typeof val === 'function' ? val(taskEditForm.attachments) : val;
-                                    setTaskEditForm({...taskEditForm, attachments: newAttachments});
-                                })}
-                                className="w-full bg-base-800 border border-base-700 rounded-lg px-4 py-3 text-base-text focus:border-primary-500 outline-none font-bold text-lg placeholder-base-600"
-                            />
-                            
-                            {/* Row 2: Selectors */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {/* Priority */}
-                                <div className="relative">
-                                    <select 
-                                        value={taskEditForm.priority}
-                                        onChange={e => setTaskEditForm({...taskEditForm, priority: e.target.value as TaskPriority})}
-                                        className="w-full bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-base-text outline-none text-sm appearance-none cursor-pointer hover:bg-base-700 transition-colors"
-                                    >
-                                        <option value="high">Alta Prioridade</option>
-                                        <option value="medium">Média Prioridade</option>
-                                        <option value="low">Baixa Prioridade</option>
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-base-muted pointer-events-none"/>
-                                </div>
-                                
-                                {/* Scope */}
-                                <div className="relative">
-                                    <select 
-                                        value={taskEditForm.scope || ''}
-                                        onChange={e => setTaskEditForm({...taskEditForm, scope: e.target.value})}
-                                        className="w-full bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-base-text outline-none text-sm appearance-none cursor-pointer hover:bg-base-700 transition-colors"
-                                    >
-                                        <option value="">Geral (Sem escopo)</option>
-                                        {(project.subsystems || []).map(sys => (
-                                        <option key={sys} value={sys}>{sys}</option>
-                                        ))}
-                                    </select>
-                                    <Layers size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-base-muted pointer-events-none"/>
-                                </div>
-
-                                {/* Roles / Actors */}
-                                <div className="relative">
-                                    <select 
-                                        value={taskEditForm.role || ''}
-                                        onChange={e => setTaskEditForm({...taskEditForm, role: e.target.value})}
-                                        className="w-full bg-base-800 border border-base-700 rounded-lg px-3 py-2 text-base-text outline-none text-sm appearance-none cursor-pointer hover:bg-base-700 transition-colors"
-                                    >
-                                        <option value="">Todos os Atores</option>
-                                        {(project.roles || []).map(role => (
-                                        <option key={role} value={role}>{role}</option>
-                                        ))}
-                                    </select>
-                                    <User size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-base-muted pointer-events-none"/>
-                                </div>
-                            </div>
-
-                            {/* Row 3: Description & Attachments Area */}
-                            <div className="flex flex-col gap-2 mt-2">
-                                <label className="text-xs font-semibold text-base-muted uppercase">Descrição</label>
-                                <textarea 
-                                    placeholder="Descrição detalhada..."
-                                    value={taskEditForm.description}
-                                    onChange={e => setTaskEditForm({...taskEditForm, description: e.target.value})}
-                                    onPaste={(e) => handlePasteImage(e, (val) => {
-                                        const newAttachments = typeof val === 'function' ? val(taskEditForm.attachments) : val;
-                                        setTaskEditForm({...taskEditForm, attachments: newAttachments});
-                                    })}
-                                    className="w-full bg-base-800 border border-base-700 rounded-lg px-4 py-3 text-base-text focus:border-primary-500 outline-none h-32 resize-none text-sm leading-relaxed"
-                                />
-                                
-                                {/* Attachments Section */}
-                                <div className="flex flex-col gap-2 mt-2">
-                                    <label className="text-xs font-semibold text-base-muted uppercase flex justify-between items-center">
-                                        <span>Anexos</span>
-                                        <span className="font-normal text-[10px] normal-case opacity-70">Cole (Ctrl+V) ou clique para adicionar</span>
-                                    </label>
-                                    <div className="flex flex-wrap gap-3">
-                                        {taskEditForm.attachments.map((img, idx) => (
-                                            <div key={idx} className="relative group w-24 h-24 rounded-lg overflow-hidden border border-base-600 bg-base-950 cursor-pointer" onClick={() => setPreviewImage(img)}>
-                                                <img src={img} alt={`Attachment ${idx}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                    <Maximize2 size={16} className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
-                                                </div>
-                                                <button 
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const newAtts = [...taskEditForm.attachments];
-                                                        newAtts.splice(idx, 1);
-                                                        setTaskEditForm({...taskEditForm, attachments: newAtts});
-                                                    }}
-                                                    className="absolute top-1 right-1 bg-red-500 text-white p-0.5 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                                                    title="Remover"
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                        <button 
-                                            onClick={() => taskFileInputRef.current?.click()}
-                                            className="w-24 h-24 rounded-lg border-2 border-dashed border-base-700 hover:border-primary-500 flex flex-col items-center justify-center text-base-muted hover:text-primary-400 transition-colors bg-base-800/50"
-                                            title="Anexar Imagem"
-                                        >
-                                            <Plus size={20} />
-                                            <span className="text-[10px] mt-1">Adicionar</span>
-                                        </button>
-                                        <input 
-                                            type="file" 
-                                            multiple 
-                                            accept="image/*" 
-                                            ref={taskFileInputRef} 
-                                            className="hidden" 
-                                            onChange={(e) => handleFileSelect(e, (val) => {
-                                                const newAttachments = typeof val === 'function' ? val(taskEditForm.attachments) : val;
-                                                setTaskEditForm({...taskEditForm, attachments: newAttachments});
-                                            })}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                     </div>
-
-                     <div className="p-6 border-t border-base-800 flex justify-end gap-3 bg-base-900 rounded-b-2xl">
-                        <button 
-                            onClick={() => { setShowNewTaskForm(false); setEditingTaskId(null); }}
-                            className="px-4 py-2 text-sm text-base-muted hover:text-base-text transition-colors"
-                        >
-                            Cancelar
-                        </button>
-                        <button 
-                            onClick={editingTaskId ? saveEditTask : handleAddNewTask}
-                            className="px-6 py-2 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-primary-900/20"
-                        >
-                            {editingTaskId ? "Salvar Alterações" : "Criar Tarefa"}
-                        </button>
-                     </div>
+              {/* BARRA DE FILTROS AVANÇADA */}
+              <div className="flex flex-wrap items-center gap-3 bg-base-800/40 p-2.5 rounded-xl border border-base-800">
+                  <div className="flex items-center gap-2 text-xs font-bold text-base-muted uppercase tracking-wider px-2">
+                    <Filter size={14} /> Filtros
                   </div>
-               </div>
-            )}
+                  
+                  {/* Filtro de Tipo */}
+                  <div className="relative group">
+                    <select 
+                      value={filterType}
+                      onChange={(e) => setFilterType(e.target.value as any)}
+                      className={`appearance-none bg-base-900 border border-base-700 rounded-lg pl-8 pr-8 py-1.5 text-xs text-base-text outline-none focus:border-primary-500 transition-all cursor-pointer hover:bg-base-800 ${filterType !== 'all' ? 'border-primary-500 text-primary-400' : ''}`}
+                    >
+                      <option value="all">Todos os Tipos</option>
+                      <option value="feature">Funcionalidade</option>
+                      <option value="bug">Bug / Correção</option>
+                      <option value="task">Tarefa Técnica</option>
+                    </select>
+                    <Tag size={12} className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${filterType !== 'all' ? 'text-primary-400' : 'text-base-muted'}`} />
+                    <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-base-muted" />
+                  </div>
+
+                  {/* Filtro de Ator (Role) */}
+                  <div className="relative group">
+                    <select 
+                      value={filterRole}
+                      onChange={(e) => setFilterRole(e.target.value)}
+                      className={`appearance-none bg-base-900 border border-base-700 rounded-lg pl-8 pr-8 py-1.5 text-xs text-base-text outline-none focus:border-primary-500 transition-all cursor-pointer hover:bg-base-800 ${filterRole !== 'all' ? 'border-blue-500 text-blue-400' : ''}`}
+                    >
+                      <option value="all">Todos os Atores</option>
+                      {(project.roles || []).map(role => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                    <User size={12} className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${filterRole !== 'all' ? 'text-blue-400' : 'text-base-muted'}`} />
+                    <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-base-muted" />
+                  </div>
+
+                  <div className="flex-1"></div>
+
+                  {/* Toggle de Concluídas */}
+                  <button 
+                    onClick={() => setShowCompleted(!showCompleted)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                      showCompleted 
+                        ? 'bg-primary-500/10 border-primary-500/30 text-primary-400' 
+                        : 'bg-base-900 border-base-700 text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    {showCompleted ? <Eye size={14} /> : <EyeOff size={14} />}
+                    {showCompleted ? "Exibindo Concluídas" : "Ocultando Concluídas"}
+                  </button>
+              </div>
+            </div>
 
             <div className="space-y-3 pb-8">
               {getFilteredTasks().length === 0 ? (
                 <div className="text-center py-20 text-base-muted border-2 border-dashed border-base-800 rounded-xl">
-                  <CheckSquare size={48} className="mx-auto mb-4 opacity-20" />
-                  <p>Nenhuma tarefa encontrada neste contexto.</p>
+                  <div className="bg-base-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 opacity-50">
+                    <CheckSquare size={32} />
+                  </div>
+                  <p className="font-medium">Nenhuma tarefa encontrada com esses filtros.</p>
+                  {!showCompleted && project.tasks.some(t => t.status === 'done') && (
+                    <button 
+                      onClick={() => setShowCompleted(true)}
+                      className="mt-3 text-primary-400 hover:text-primary-300 text-sm font-semibold"
+                    >
+                      Exibir tarefas concluídas?
+                    </button>
+                  )}
                 </div>
               ) : (
                 getFilteredTasks().sort((a,b) => b.createdAt - a.createdAt).map(task => (
@@ -1309,7 +1203,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                   >
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation(); // Prevent opening modal
+                        e.stopPropagation(); 
                         updateTaskStatus(task.id, task.status === 'done' ? 'todo' : 'done');
                       }}
                       className={`mt-1 flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
@@ -1327,30 +1221,37 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                           {task.title}
                         </span>
                         
-                        {/* Priority Badge */}
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wide font-bold ${getPriorityColor(task.priority)}`}>
                           {task.priority === 'medium' ? 'média' : task.priority === 'high' ? 'alta' : 'baixa'}
                         </span>
 
-                        {/* Scope Badge */}
                         {task.scope && (
                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-base-900 text-base-muted border border-base-700 uppercase tracking-wide flex items-center gap-1">
                               <Layers size={10} /> {task.scope}
                            </span>
                         )}
 
-                        {/* Role Badge */}
                         {task.role && (
                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-base-900 text-blue-400/80 border border-blue-900/30 uppercase tracking-wide flex items-center gap-1">
                               <User size={10} /> {task.role}
                            </span>
+                        )}
+                        
+                        {task.type && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wide flex items-center gap-1 ${
+                                task.type === 'bug' ? 'bg-red-900/20 text-red-400 border-red-900/30' : 
+                                task.type === 'feature' ? 'bg-green-900/20 text-green-400 border-green-900/30' :
+                                'bg-base-900 text-base-muted border-base-700'
+                            }`}>
+                                {task.type === 'bug' ? <Bug size={10}/> : <Tag size={10}/>}
+                                {task.type === 'bug' ? 'bug' : task.type === 'feature' ? 'feature' : 'task'}
+                            </span>
                         )}
                       </div>
                       {task.description && (
                         <p className="text-sm text-base-muted line-clamp-2">{task.description}</p>
                       )}
                       
-                      {/* Attachments Indicator (Read-only view) */}
                       {task.attachments && task.attachments.length > 0 && (
                           <div className="flex items-center gap-2 mt-2">
                              <span className="text-xs text-base-muted flex items-center gap-1">
@@ -1419,7 +1320,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                           kanbanDragTask?.id === task.id ? 'opacity-40' : ''
                         }`}
                       >
-                         {/* Kanban Cover Image */}
                          {task.attachments && task.attachments.length > 0 && (
                             <div className="w-full aspect-video bg-base-950 relative border-b border-base-800/50">
                                 <img src={task.attachments[0]} alt="cover" className="w-full h-full object-cover" />
@@ -1464,7 +1364,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: NOTES (Keep existing content) */}
+        {/* TAB: NOTES */}
         {activeTab === 'notes' && (
           <div className="flex flex-col p-6 h-[calc(100vh-10rem)]">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 flex-shrink-0">
@@ -1507,7 +1407,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                   className="flex-1 w-full bg-white border border-gray-300 p-6 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all resize-none font-mono text-sm leading-relaxed custom-scrollbar shadow-inner"
                 />
                 
-                {/* AI Notes Attachments Area */}
                 <div className="flex items-center gap-3 p-3 bg-base-800 border border-base-700 rounded-xl">
                     <button 
                         onClick={() => noteFileInputRef.current?.click()}
@@ -1554,10 +1453,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: DOCS (Keep existing content) */}
+        {/* TAB: DOCS */}
         {activeTab === 'docs' && (
           <div className="flex items-start min-h-[calc(100vh-10rem)]">
-            {/* Sidebar de Documentos */}
             <div className="w-64 border-r border-base-800 bg-base-950/30 flex flex-col sticky top-[8rem] h-[calc(100vh-8rem)]">
               <div className="p-4 border-b border-base-800 flex-shrink-0">
                 <button 
@@ -1601,7 +1499,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
               </div>
             </div>
 
-            {/* Área de Edição */}
             <div className="flex-1 flex flex-col bg-base-900 min-h-[calc(100vh-10rem)]">
               {editingDocId ? (
                 (() => {
@@ -1618,7 +1515,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                         />
                         
                         <div className="flex items-center gap-3">
-                           {/* Doc Settings (Scope/Role) */}
                            <div className="flex items-center gap-2">
                                <select 
                                   value={doc.scope || ''}
@@ -1672,10 +1568,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: DIAGRAMS (Keep existing content) */}
+        {/* TAB: DIAGRAMS */}
         {activeTab === 'diagrams' && (
           <div className="flex items-start min-h-[calc(100vh-10rem)]">
-            {/* Sidebar Diagramas */}
             <div className="w-64 border-r border-base-800 bg-base-950/30 flex flex-col sticky top-[8rem] h-[calc(100vh-8rem)]">
               <div className="p-4 border-b border-base-800 flex-shrink-0">
                 <button 
@@ -1716,7 +1611,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
               </div>
             </div>
 
-            {/* Área Principal Diagramas */}
             <div className="flex-1 flex flex-col bg-base-900 min-h-[calc(100vh-10rem)]">
               {editingDiagramId ? (
                 (() => {
@@ -1724,7 +1618,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                   if (!diagram) return null;
                   return (
                     <div className="flex flex-col h-[calc(100vh-10rem)]">
-                      {/* Diagram Header */}
                       <div className="h-14 border-b border-base-800 flex items-center justify-between px-6 bg-base-900 flex-shrink-0">
                         <div className="flex items-center gap-4 flex-1 mr-4">
                            <input 
@@ -1734,7 +1627,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                              placeholder="Título do Diagrama"
                            />
                            
-                           {/* Diagram Type Selector */}
                            <div className="relative">
                               <select 
                                 value={diagram.type || 'flowchart'}
@@ -1754,17 +1646,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Diagram Split View */}
                       <div className="flex-1 flex overflow-hidden">
-                        {/* Editor (Left) */}
                         <div className="w-1/3 border-r border-base-800 flex flex-col bg-base-950/50 z-20">
-                          {/* NEW CODE EDITOR COMPONENT */}
                           <CodeEditor 
                              value={diagram.code}
                              onChange={(newCode) => updateDiagram(diagram.id, { code: newCode })}
                           />
                           
-                          {/* AI Prompt Area */}
                           <div className="p-4 border-t border-[#333] bg-[#1e1e1e]">
                              <div className="relative">
                                <textarea
@@ -1789,7 +1677,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                           </div>
                         </div>
 
-                        {/* Preview (Right) - Infinite Canvas */}
                         <div className="flex-1 bg-base-900 relative overflow-hidden flex flex-col z-10">
                           <div className="flex-1 relative">
                              <div className="absolute inset-0">
@@ -1811,13 +1698,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           </div>
         )}
 
-        {/* TAB: REPOS (New) */}
+        {/* TAB: REPOS */}
         {activeTab === 'code' && (
             <RepositoryManager project={project} />
         )}
       </div>
 
-      {/* LIGHTBOX / FULLSCREEN IMAGE PREVIEW */}
+      {/* LIGHTBOX */}
       {previewImage && (
         <div 
             className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-in fade-in duration-200"

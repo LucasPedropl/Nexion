@@ -1,20 +1,9 @@
+
 import { GoogleGenAI, Type } from '@google/genai';
 import { Task, DiagramType } from '../types';
 
-// Prefer Vite client env (VITE_) and do not bundle local credentials
-const geminiApiKey =
-	(typeof import.meta !== 'undefined' &&
-		(import.meta as any).env?.VITE_GEMINI_API_KEY) ||
-	(typeof import.meta !== 'undefined' &&
-		(import.meta as any).env?.GEMINI_API_KEY) ||
-	(typeof process !== 'undefined'
-		? process.env.VITE_GEMINI_API_KEY ||
-		  process.env.GEMINI_API_KEY ||
-		  process.env.API_KEY
-		: '') ||
-	'';
-
-const ai = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+// Use process.env.API_KEY exclusively for initialization as per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Instrução do sistema para guiar a persona do modelo
 const SYSTEM_INSTRUCTION = `Você é um gerente de projetos técnicos experiente e especialista em documentação para desenvolvedores de software. 
@@ -26,11 +15,6 @@ export const analyzeNotesToTasks = async (
 	availableScopes: string[] = [],
 	availableRoles: string[] = []
 ): Promise<Partial<Task>[]> => {
-	if (!geminiApiKey || !ai) {
-		console.warn('Nenhuma API Key fornecida para o Gemini.');
-		return [];
-	}
-
 	try {
 		const scopesStr =
 			availableScopes.length > 0 ? availableScopes.join(', ') : 'Geral';
@@ -56,8 +40,9 @@ export const analyzeNotesToTasks = async (
       "${notes}"
     `;
 
+		// Using gemini-3-pro-preview for complex reasoning task
 		const response = await ai.models.generateContent({
-			model: 'gemini-2.5-flash',
+			model: 'gemini-3-pro-preview',
 			contents: prompt,
 			config: {
 				systemInstruction: SYSTEM_INSTRUCTION,
@@ -130,11 +115,10 @@ export const analyzeNotesToTasks = async (
 export const refineDocumentation = async (
 	roughDraft: string
 ): Promise<string> => {
-	if (!geminiApiKey || !ai) return roughDraft;
-
 	try {
+		// Using gemini-3-flash-preview for basic text task
 		const response = await ai.models.generateContent({
-			model: 'gemini-2.5-flash',
+			model: 'gemini-3-flash-preview',
 			contents: `Reescreva e formate o seguinte rascunho de documentação em Markdown limpo e profissional.
       Use cabeçalhos, marcadores e blocos de código onde apropriado para facilitar a leitura por desenvolvedores.
       Mantenha o texto em Português do Brasil.
@@ -158,8 +142,6 @@ export const generateDiagramCode = async (
 	projectContext: string,
 	diagramType: DiagramType = 'flowchart'
 ): Promise<string> => {
-	if (!geminiApiKey || !ai) return '';
-
 	const diagramTypeInstruction = {
 		flowchart: 'Use "graph TD" ou "graph LR".',
 		sequence: 'Use "sequenceDiagram".',
@@ -196,8 +178,9 @@ export const generateDiagramCode = async (
         B -- No --> E[End]
     `;
 
+		// Using gemini-3-pro-preview for complex reasoning/coding task
 		const response = await ai.models.generateContent({
-			model: 'gemini-2.5-flash',
+			model: 'gemini-3-pro-preview',
 			contents: prompt,
 			config: {
 				systemInstruction:

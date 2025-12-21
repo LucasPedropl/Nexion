@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, FunctionDeclaration, Type } from '@google/genai';
 import { Bot, Send, X, Minimize2, Terminal, Loader2 } from 'lucide-react';
@@ -110,78 +111,49 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 				required: ['title', 'content'],
 			},
 		},
-		{
-			name: 'list_repo_files',
-			description: 'Lista arquivos de um repositório conectado.',
-			parameters: {
-				type: Type.OBJECT,
-				properties: {
-					repoUrl: {
-						type: Type.STRING,
-						description:
-							'URL completa do repositório (ex: https://github.com/owner/repo) ou apenas o nome se houver ambiguidade.',
-					},
-					path: {
-						type: Type.STRING,
-						description:
-							'Caminho da pasta (opcional, padrão raiz).',
-					},
-				},
-				required: ['repoUrl'],
-			},
-		},
-		{
-			name: 'read_repo_file',
-			description: 'Lê o conteúdo de um arquivo no repositório.',
-			parameters: {
-				type: Type.OBJECT,
-				properties: {
-					repoUrl: {
-						type: Type.STRING,
-						description: 'URL do repositório.',
-					},
-					filePath: {
-						type: Type.STRING,
-						description: 'Caminho completo do arquivo.',
-					},
-				},
-				required: ['repoUrl', 'filePath'],
-			},
-		},
-		{
-			name: 'commit_changes',
-			description: 'Cria um commit com alterações em um arquivo.',
-			parameters: {
-				type: Type.OBJECT,
-				properties: {
-					repoUrl: {
-						type: Type.STRING,
-						description: 'URL do repositório.',
-					},
-					filePath: {
-						type: Type.STRING,
-						description: 'Caminho do arquivo.',
-					},
-					content: {
-						type: Type.STRING,
-						description: 'Novo conteúdo COMPLETO do arquivo.',
-					},
-					message: {
-						type: Type.STRING,
-						description: 'Mensagem do commit.',
-					},
-				},
-				required: ['repoUrl', 'filePath', 'content', 'message'],
-			},
-		},
+        {
+            name: 'list_repo_files',
+            description: 'Lista arquivos de um repositório conectado.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL completa do repositório (ex: https://github.com/owner/repo) ou apenas o nome se houver ambiguidade.' },
+                    path: { type: Type.STRING, description: 'Caminho da pasta (opcional, padrão raiz).' }
+                },
+                required: ['repoUrl']
+            }
+        },
+        {
+            name: 'read_repo_file',
+            description: 'Lê o conteúdo de um arquivo no repositório.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL do repositório.' },
+                    filePath: { type: Type.STRING, description: 'Caminho completo do arquivo.' }
+                },
+                required: ['repoUrl', 'filePath']
+            }
+        },
+        {
+            name: 'commit_changes',
+            description: 'Cria um commit com alterações em um arquivo.',
+            parameters: {
+                type: Type.OBJECT,
+                properties: {
+                    repoUrl: { type: Type.STRING, description: 'URL do repositório.' },
+                    filePath: { type: Type.STRING, description: 'Caminho do arquivo.' },
+                    content: { type: Type.STRING, description: 'Novo conteúdo COMPLETO do arquivo.' },
+                    message: { type: Type.STRING, description: 'Mensagem do commit.' }
+                },
+                required: ['repoUrl', 'filePath', 'content', 'message']
+            }
+        }
 	];
 
 	// --- EXECUTORES DAS FERRAMENTAS ---
 
-	const executeFunction = async (
-		name: string,
-		args: any
-	): Promise<string> => {
+	const executeFunction = async (name: string, args: any): Promise<string> => {
 		console.log(`[AI Exec] ${name}`, args);
 
 		if (name === 'create_task') {
@@ -204,9 +176,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 			const task = project.tasks.find((t) => t.id === args.taskId);
 			if (!task) return `Erro: Tarefa ${args.taskId} não encontrada.`;
 			const updatedTasks = project.tasks.map((t) =>
-				t.id === args.taskId
-					? { ...t, status: args.newStatus as TaskStatus }
-					: t
+				t.id === args.taskId ? { ...t, status: args.newStatus as TaskStatus } : t
 			);
 			onUpdateProject({ ...project, tasks: updatedTasks });
 			return `Status atualizado para ${args.newStatus}.`;
@@ -224,89 +194,56 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 			return `Documento "${newDoc.title}" criado.`;
 		}
 
-		// --- GITHUB TOOLS ---
-		const user = auth.currentUser;
-		if (!user?.githubToken) return 'Erro: Usuário não conectado ao GitHub.';
+        // --- GITHUB TOOLS ---
+        const user = auth.currentUser;
+        if (!user?.githubToken) return "Erro: Usuário não conectado ao GitHub.";
 
-		const getRepoDetails = (url: string) => {
-			// Tenta encontrar match na lista do projeto ou usa direto
-			const cleanUrl = url.includes('github.com')
-				? url
-				: project.githubRepos?.find((r) => r.includes(url)) || url;
-			const parts = cleanUrl
-				.replace('https://github.com/', '')
-				.split('/');
-			if (parts.length < 2) throw new Error('Repositório inválido.');
-			return { owner: parts[0], repo: parts[1] };
-		};
+        const getRepoDetails = (url: string) => {
+            // Tenta encontrar match na lista do projeto ou usa direto
+            const cleanUrl = url.includes('github.com') ? url : project.githubRepos?.find(r => r.includes(url)) || url;
+            const parts = cleanUrl.replace('https://github.com/', '').split('/');
+            if (parts.length < 2) throw new Error("Repositório inválido.");
+            return { owner: parts[0], repo: parts[1] };
+        };
 
-		if (name === 'list_repo_files') {
-			try {
-				const { owner, repo } = getRepoDetails(args.repoUrl);
-				const files = await githubApi.getContents(
-					user.githubToken,
-					owner,
-					repo,
-					args.path || ''
-				);
-				return JSON.stringify(
-					files.map((f) => ({
-						name: f.name,
-						type: f.type,
-						path: f.path,
-					}))
-				);
-			} catch (e: any) {
-				return `Erro ao listar arquivos: ${e.message}`;
-			}
-		}
+        if (name === 'list_repo_files') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                const files = await githubApi.getContents(user.githubToken, owner, repo, args.path || '');
+                return JSON.stringify(files.map(f => ({ name: f.name, type: f.type, path: f.path })));
+            } catch (e: any) {
+                return `Erro ao listar arquivos: ${e.message}`;
+            }
+        }
 
-		if (name === 'read_repo_file') {
-			try {
-				const { owner, repo } = getRepoDetails(args.repoUrl);
-				const { content } = await githubApi.getFileContent(
-					user.githubToken,
-					owner,
-					repo,
-					args.filePath
-				);
-				return `Conteúdo de ${args.filePath}:\n${content}`;
-			} catch (e: any) {
-				return `Erro ao ler arquivo: ${e.message}`;
-			}
-		}
+        if (name === 'read_repo_file') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                const { content } = await githubApi.getFileContent(user.githubToken, owner, repo, args.filePath);
+                return `Conteúdo de ${args.filePath}:\n${content}`;
+            } catch (e: any) {
+                return `Erro ao ler arquivo: ${e.message}`;
+            }
+        }
 
-		if (name === 'commit_changes') {
-			try {
-				const { owner, repo } = getRepoDetails(args.repoUrl);
-				// Precisa do SHA atual para update
-				let sha: string | undefined;
-				try {
-					const current = await githubApi.getFileContent(
-						user.githubToken,
-						owner,
-						repo,
-						args.filePath
-					);
-					sha = current.sha;
-				} catch (e) {
-					// Arquivo novo
-				}
+        if (name === 'commit_changes') {
+            try {
+                const { owner, repo } = getRepoDetails(args.repoUrl);
+                // Precisa do SHA atual para update
+                let sha: string | undefined;
+                try {
+                    const current = await githubApi.getFileContent(user.githubToken, owner, repo, args.filePath);
+                    sha = current.sha;
+                } catch (e) {
+                    // Arquivo novo
+                }
 
-				await githubApi.updateFile(
-					user.githubToken,
-					owner,
-					repo,
-					args.filePath,
-					args.content,
-					args.message,
-					sha
-				);
-				return `Sucesso! Arquivo ${args.filePath} atualizado/criado.`;
-			} catch (e: any) {
-				return `Erro ao commitar: ${e.message}`;
-			}
-		}
+                await githubApi.updateFile(user.githubToken, owner, repo, args.filePath, args.content, args.message, sha);
+                return `Sucesso! Arquivo ${args.filePath} atualizado/criado.`;
+            } catch (e: any) {
+                return `Erro ao commitar: ${e.message}`;
+            }
+        }
 
 		return 'Função desconhecida.';
 	};
@@ -322,47 +259,29 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 		setIsLoading(true);
 
 		try {
-			const apiKey =
-				(typeof import.meta !== 'undefined' &&
-					(import.meta as any).env?.VITE_GEMINI_API_KEY) ||
-				(typeof import.meta !== 'undefined' &&
-					(import.meta as any).env?.GEMINI_API_KEY) ||
-				(typeof process !== 'undefined'
-					? process.env.VITE_GEMINI_API_KEY ||
-					  process.env.GEMINI_API_KEY ||
-					  process.env.API_KEY
-					: '') ||
-				'';
-
-			if (!apiKey) throw new Error('API key missing.');
-
-			const ai = new GoogleGenAI({ apiKey });
+			// Using process.env.API_KEY exclusively as per guidelines
+			const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 			// Preparar Contexto
 			const projectContext = `
                 PROJETO: ${project.name}
-                REPOSITÓRIOS CONECTADOS: ${
-					project.githubRepos?.join(', ') || 'Nenhum'
-				}
+                REPOSITÓRIOS CONECTADOS: ${project.githubRepos?.join(', ') || 'Nenhum'}
                 TAREFAS: ${project.tasks.length}
             `;
 
 			const prompt = `
                 ${projectContext}
                 Histórico:
-                ${messages
-					.slice(-4)
-					.map((m) => `${m.role}: ${m.content}`)
-					.join('\n')}
+                ${messages.slice(-4).map((m) => `${m.role}: ${m.content}`).join('\n')}
                 user: ${userMsg}
             `;
 
+			// Using gemini-3-pro-preview for complex reasoning/coding assistant task
 			const response = await ai.models.generateContent({
-				model: 'gemini-2.5-flash',
+				model: 'gemini-3-pro-preview',
 				contents: prompt,
 				config: {
-					systemInstruction:
-						'Você é um Tech Lead AI. Use as ferramentas para ler código e gerenciar o projeto.',
+					systemInstruction: 'Você é um Tech Lead AI. Use as ferramentas para ler código e gerenciar o projeto.',
 					tools: [{ functionDeclarations: tools }],
 				},
 			});
@@ -375,15 +294,9 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({
 					const output = await executeFunction(call.name, call.args);
 					executionSummary += `[Exec ${call.name}]: ${output}\n`;
 				}
-				setMessages((prev) => [
-					...prev,
-					{ role: 'model', content: executionSummary },
-				]);
+				setMessages((prev) => [...prev, { role: 'model', content: executionSummary }]);
 			} else {
-				setMessages((prev) => [
-					...prev,
-					{ role: 'model', content: response.text || '...' },
-				]);
+				setMessages((prev) => [...prev, { role: 'model', content: response.text || '...' }]);
 			}
 		} catch (error) {
 			console.error(error);
