@@ -1,9 +1,33 @@
-
 import { GoogleGenAI, Type } from '@google/genai';
 import { Task, DiagramType } from '../types';
 
-// Use process.env.API_KEY exclusively for initialization as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Resolve API key from Vite client env or Node process env as fallback
+const VITE_GEMINI_KEY =
+	typeof import.meta !== 'undefined'
+		? (import.meta as any).env?.VITE_GEMINI_API_KEY
+		: undefined;
+const NODE_API_KEY =
+	typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+const GEMINI_API_KEY = VITE_GEMINI_KEY || NODE_API_KEY || '';
+
+let ai: any;
+if (GEMINI_API_KEY) {
+	ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+} else {
+	console.error(
+		'GoogleGenAI: API key not found. Set VITE_GEMINI_API_KEY in .env or process.env.API_KEY'
+	);
+	// Fallback stub that throws meaningful errors when used
+	ai = {
+		models: {
+			generateContent: async () => {
+				throw new Error(
+					'GoogleGenAI API key not set. Configure VITE_GEMINI_API_KEY or API_KEY.'
+				);
+			},
+		},
+	};
+}
 
 // Instrução do sistema para guiar a persona do modelo
 const SYSTEM_INSTRUCTION = `Você é um gerente de projetos técnicos experiente e especialista em documentação para desenvolvedores de software. 
