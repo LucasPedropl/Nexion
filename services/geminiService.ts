@@ -29,6 +29,40 @@ if (GEMINI_API_KEY) {
 	};
 }
 
+// --- CONFIGURAÇÃO DO MODELO ---
+// Usando a versão específica do preview que costuma ser mais estável
+const MODEL_NAME = 'gemini-2.0-flash-lite-preview-02-05';
+
+// Função Helper para Retry com Backoff Exponencial (Resolve erro 429)
+async function generateWithRetry(params: any, maxRetries = 3) {
+	for (let i = 0; i < maxRetries; i++) {
+		try {
+			return await ai.models.generateContent({
+				model: MODEL_NAME,
+				...params,
+			});
+		} catch (error: any) {
+			// Se for erro 429 (Too Many Requests) ou 503 (Service Unavailable)
+			if (
+				(error.status === 429 ||
+					error.code === 429 ||
+					error.status === 503) &&
+				i < maxRetries - 1
+			) {
+				const delay = 2000 * Math.pow(2, i); // 2s, 4s, 8s...
+				console.warn(
+					`⚠️ Gemini Rate Limit (429). Esperando ${delay}ms para tentar novamente... (Tentativa ${
+						i + 1
+					}/${maxRetries})`
+				);
+				await new Promise((resolve) => setTimeout(resolve, delay));
+				continue;
+			}
+			throw error;
+		}
+	}
+}
+
 // Instrução do sistema para guiar a persona do modelo
 const SYSTEM_INSTRUCTION = `Você é um gerente de projetos técnicos experiente e especialista em documentação para desenvolvedores de software. 
 Seu objetivo é analisar notas de reuniões desestruturadas e transformá-las em itens acionáveis e documentação técnica estruturada. Responda sempre em Português do Brasil.`;
@@ -64,9 +98,8 @@ export const analyzeNotesToTasks = async (
       "${notes}"
     `;
 
-		// Using gemini-3-pro-preview for complex reasoning task
-		const response = await ai.models.generateContent({
-			model: 'gemini-3-pro-preview',
+		// Usando o wrapper com retry
+		const response = await generateWithRetry({
 			contents: prompt,
 			config: {
 				systemInstruction: SYSTEM_INSTRUCTION,
@@ -122,7 +155,6 @@ export const analyzeNotesToTasks = async (
 				...item,
 				id: crypto.randomUUID(),
 				createdAt: Date.now(),
-				// Se a IA não definiu escopo, usa o contexto atual (se não for 'general')
 				scope:
 					item.scope ||
 					(contextScope === 'general' ? undefined : contextScope),
@@ -140,9 +172,7 @@ export const refineDocumentation = async (
 	roughDraft: string
 ): Promise<string> => {
 	try {
-		// Using gemini-3-flash-preview for basic text task
-		const response = await ai.models.generateContent({
-			model: 'gemini-3-flash-preview',
+		const response = await generateWithRetry({
 			contents: `Reescreva e formate o seguinte rascunho de documentação em Markdown limpo e profissional.
       Use cabeçalhos, marcadores e blocos de código onde apropriado para facilitar a leitura por desenvolvedores.
       Mantenha o texto em Português do Brasil.
@@ -192,19 +222,9 @@ export const generateDiagramCode = async (
       TAREFA:
       Crie um diagrama usando a sintaxe MERMAID.JS que atenda à solicitação do usuário e respeite o tipo solicitado.
       Retorne APENAS o código Mermaid puro. Não use blocos de código markdown (\`\`\`). Não inclua explicações.
-      
-      Exemplo de Saída Esperada (se for Flowchart):
-      graph TD
-        A[Start] --> B{Is it?}
-        B -- Yes --> C[OK]
-        C --> D[Rethink]
-        D --> B
-        B -- No --> E[End]
     `;
 
-		// Using gemini-3-pro-preview for complex reasoning/coding task
-		const response = await ai.models.generateContent({
-			model: 'gemini-3-pro-preview',
+		const response = await generateWithRetry({
 			contents: prompt,
 			config: {
 				systemInstruction:
@@ -214,7 +234,6 @@ export const generateDiagramCode = async (
 		});
 
 		let code = response.text || '';
-		// Limpar blocos de código markdown se o modelo insistir em colocá-los
 		code = code
 			.replace(/```mermaid/g, '')
 			.replace(/```/g, '')
